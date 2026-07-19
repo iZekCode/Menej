@@ -6,12 +6,18 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct MenejApp: App {
+    private let persistenceService = PersistenceService()
+    @State private var appState = AppState()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(appState)
         }
+        .modelContainer(persistenceService.modelContainer)
     }
 }

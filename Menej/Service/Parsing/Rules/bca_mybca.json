@@ -1,0 +1,12 @@
+{
+  "issuer": "bca_mybca",
+  "version": 3,
+  "fingerprint": {
+    "textContains": ["REKENING TAHAPAN", "MATA UANG : IDR"]
+  },
+  "dateFormats": ["dd/MM"],
+  "amountFormat": { "decimalSeparator": ".", "thousandSeparator": "," },
+  "transactionPattern": "OCR-based, not text-pattern-based — PDFKit's plain text dump scrambles row/column order on busy dates. See OCRRowExtractor.swift, validated against all 5 real statements (exact reconciliation on 3/5 months, within ~30,000 IDR on the other 2).",
+  "columnMap": {},
+  "validation": { "requireBalanceContinuity": true }
+}

@@ -1,0 +1,12 @@
+{
+  "issuer": "gopay",
+  "version": 2,
+  "fingerprint": {
+    "textContains": ["E-statement", "GoPay Saldo"]
+  },
+  "dateFormats": ["dd/MM/yyyy HH:mm"],
+  "amountFormat": { "decimalSeparator": "", "thousandSeparator": "." },
+  "transactionPattern": "see RuleEngine.extractGoPayRows / TransactionNormalizer.normalizeGoPayRow",
+  "columnMap": {},
+  "validation": { "requireBalanceContinuity": false }
+}

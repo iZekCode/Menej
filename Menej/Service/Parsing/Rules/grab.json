@@ -1,0 +1,12 @@
+{
+  "issuer": "grab",
+  "version": 3,
+  "fingerprint": {
+    "textContains": ["Laporan Anggota"]
+  },
+  "dateFormats": ["d MMM yyyy h:mma"],
+  "amountFormat": { "decimalSeparator": ".", "thousandSeparator": "" },
+  "transactionPattern": "OCR-based, not text-pattern-based — plain text-layer extraction loses all digits (font subsetting). See OCRRowExtractor.swift, validated exact (delta 0) against all 5 real statements.",
+  "columnMap": {},
+  "validation": { "requireBalanceContinuity": false }
+}
