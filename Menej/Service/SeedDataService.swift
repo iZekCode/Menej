@@ -60,15 +60,19 @@ enum SeedDataService {
         return result
     }
 
-    /// Wipes existing Accounts/Statements/Transactions before reseeding —
-    /// for iterating on parsing/categorization changes without needing to
-    /// delete and reinstall the app.
+    /// Wipes existing Accounts/Statements/Transactions/Snapshots before
+    /// reseeding — for iterating on parsing/categorization changes without
+    /// needing to delete and reinstall the app. Snapshots are included
+    /// because they're otherwise frozen once created for a given month
+    /// (see SnapshotService) — without wiping them, a second reseed would
+    /// silently keep the first run's stale snapshots.
     @MainActor
     @discardableResult
     static func resetAndSeed(modelContext: ModelContext) -> SeedResult {
         try? modelContext.delete(model: Transaction.self)
         try? modelContext.delete(model: Statement.self)
         try? modelContext.delete(model: Account.self)
+        try? modelContext.delete(model: NetWorthSnapshot.self)
         try? modelContext.save()
         let result = seed(modelContext: modelContext)
         print("[SeedDataService] \(result)")

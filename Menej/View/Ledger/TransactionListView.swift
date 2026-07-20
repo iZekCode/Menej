@@ -2,19 +2,36 @@
 //  TransactionListView.swift
 //  Menej
 //
-//  Simple list screen — queries directly per Appendix C notes
-//  (ViewModels are reserved for screens with real logic).
+//  Simple list screen — queries directly per Appendix C notes. The AI
+//  enhancement action is real logic, so it's driven by LedgerViewModel
+//  rather than living inline here.
 //
 
 import SwiftUI
 import SwiftData
 
 struct TransactionListView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
+    @State private var viewModel = LedgerViewModel()
 
     var body: some View {
         NavigationStack {
             List {
+                if let progress = viewModel.enhancementProgress {
+                    Section {
+                        HStack {
+                            ProgressView(value: Double(progress.completed), total: Double(max(progress.total, 1)))
+                            Text("\(progress.completed)/\(progress.total)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Cancel", role: .destructive) {
+                            viewModel.cancelEnhancement()
+                        }
+                    }
+                }
+
                 if transactions.isEmpty {
                     EmptyStateView(
                         systemImage: "list.bullet.rectangle",
@@ -40,6 +57,25 @@ struct TransactionListView: View {
                         Label("Review Duplicates", systemImage: "arrow.left.arrow.right")
                     }
                 }
+                ToolbarItem(placement: .secondaryAction) {
+                    Button {
+                        viewModel.startEnhancement(transactions: transactions, modelContext: modelContext)
+                    } label: {
+                        Label("Enhance with AI", systemImage: "sparkles")
+                    }
+                    .disabled(viewModel.enhancementProgress != nil || transactions.isEmpty)
+                }
+            }
+            .alert(
+                "Can't Enhance with AI",
+                isPresented: Binding(
+                    get: { viewModel.enhancementError != nil },
+                    set: { if !$0 { viewModel.enhancementError = nil } }
+                )
+            ) {
+                Button("OK") { viewModel.enhancementError = nil }
+            } message: {
+                Text(viewModel.enhancementError ?? "")
             }
         }
     }

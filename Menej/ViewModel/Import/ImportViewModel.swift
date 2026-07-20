@@ -29,6 +29,7 @@ final class ImportViewModel {
     private let parsingService: ParsingServiceProtocol
     private let remoteConfigService: RemoteConfigServiceProtocol
     private let categorizationService: CategorizationServiceProtocol
+    private let snapshotService: SnapshotServiceProtocol
 
     var fileStatuses: [URL: ImportFileStatus] = [:]
 
@@ -40,11 +41,13 @@ final class ImportViewModel {
     init(
         parsingService: ParsingServiceProtocol? = nil,
         remoteConfigService: RemoteConfigServiceProtocol? = nil,
-        categorizationService: CategorizationServiceProtocol? = nil
+        categorizationService: CategorizationServiceProtocol? = nil,
+        snapshotService: SnapshotServiceProtocol? = nil
     ) {
         self.parsingService = parsingService ?? ParsingService()
         self.remoteConfigService = remoteConfigService ?? RemoteConfigService()
         self.categorizationService = categorizationService ?? CategorizationService()
+        self.snapshotService = snapshotService ?? SnapshotService()
     }
 
     func importFiles(_ urls: [URL]) {
@@ -135,6 +138,14 @@ final class ImportViewModel {
                 modelContext.insert(transaction)
             }
 
+            // Monthly net worth snapshot (PRD §6 F5) — frozen once created
+            // for a given month, so backfilling historical statements out
+            // of order (e.g. all of one issuer's months, then another
+            // issuer's) never overwrites an already-committed month. Safe
+            // here because only myBCA ever changes an account's balance;
+            // GoPay/Grab accounts stay at 0 regardless of processing order.
+            try Self.upsertSnapshotIfNeeded(periodEnd: periodEnd, modelContext: modelContext, snapshotService: snapshotService)
+
             try modelContext.save()
             fileStatuses[url] = .imported
             return statement.transactions.count
@@ -147,6 +158,20 @@ final class ImportViewModel {
     private static func fileHash(for url: URL) throws -> String {
         guard let data = try? Data(contentsOf: url) else { throw ImportPersistenceError.unreadableFile }
         return SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func upsertSnapshotIfNeeded(
+        periodEnd: Date,
+        modelContext: ModelContext,
+        snapshotService: SnapshotServiceProtocol
+    ) throws {
+        let existingSnapshots = try modelContext.fetch(FetchDescriptor<NetWorthSnapshot>())
+        guard !snapshotService.hasSnapshot(forMonthOf: periodEnd, in: existingSnapshots) else { return }
+
+        let allAccounts = try modelContext.fetch(FetchDescriptor<Account>())
+        let totalAssets = allAccounts.reduce(Decimal(0)) { $0 + $1.balance }
+        let snapshot = snapshotService.makeSnapshot(date: periodEnd, totalAssets: totalAssets, totalLiabilities: 0)
+        modelContext.insert(snapshot)
     }
 
     private static func findOrCreateAccount(for issuer: Issuer, in modelContext: ModelContext) throws -> Account {

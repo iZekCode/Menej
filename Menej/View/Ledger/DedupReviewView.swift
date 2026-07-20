@@ -24,28 +24,41 @@ struct DedupReviewView: View {
                     message: "Menej checks new imports against your existing ledger for transfers between your own accounts and expenses recorded by more than one source."
                 )
             } else {
-                ForEach(Array(viewModel.pendingDedupCandidates.enumerated()), id: \.offset) { _, candidate in
-                    if let first = transactions.first(where: { $0.id == candidate.transactionId }),
-                       let second = transactions.first(where: { $0.id == candidate.matchedTransactionId }) {
-                        DedupCandidateRow(first: first, second: second, candidate: candidate)
-                            .swipeActions(edge: .trailing) {
-                                Button("Confirm", systemImage: "checkmark") {
-                                    viewModel.confirmMatch(candidate, in: transactions)
-                                    try? modelContext.save()
+                Section {
+                    ForEach(Array(viewModel.pendingDedupCandidates.enumerated()), id: \.offset) { _, candidate in
+                        if let first = transactions.first(where: { $0.id == candidate.transactionId }),
+                           let second = transactions.first(where: { $0.id == candidate.matchedTransactionId }) {
+                            DedupCandidateRow(first: first, second: second, candidate: candidate)
+                                .swipeActions(edge: .trailing) {
+                                    Button("Confirm", systemImage: "checkmark") {
+                                        viewModel.confirmMatch(candidate, in: transactions)
+                                        try? modelContext.save()
+                                    }
+                                    .tint(AppColor.gain)
                                 }
-                                .tint(AppColor.gain)
-                            }
-                            .swipeActions(edge: .leading) {
-                                Button("Not a match", systemImage: "xmark") {
-                                    viewModel.rejectMatch(candidate)
+                                .swipeActions(edge: .leading) {
+                                    Button("Not a match", systemImage: "xmark") {
+                                        viewModel.rejectMatch(candidate)
+                                    }
+                                    .tint(AppColor.loss)
                                 }
-                                .tint(AppColor.loss)
-                            }
+                        }
                     }
+                } footer: {
+                    Text("Auto-Resolve confirms transfers over Rp100,000, and rejects everything else — smaller transfers and all duplicate expenses.")
                 }
             }
         }
         .navigationTitle("Possible Duplicates")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Auto-Resolve") {
+                    viewModel.bulkResolvePendingCandidates(in: transactions, transferAmountThreshold: 100_000)
+                    try? modelContext.save()
+                }
+                .disabled(viewModel.pendingDedupCandidates.isEmpty)
+            }
+        }
         .onAppear {
             viewModel.refreshDedupCandidates(transactions: transactions)
         }

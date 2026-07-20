@@ -7,22 +7,32 @@
 
 import Foundation
 import Observation
+import SwiftData
 
 @Observable
 @MainActor
 final class LedgerViewModel {
     private let categorizationService: CategorizationServiceProtocol
     private let dedupService: DedupServiceProtocol
+    private let aiEnhancementService: AIEnhancementServiceProtocol
 
     var pendingDedupCandidates: [DedupCandidate] = []
+
+    /// Progress during a bulk AI enhancement pass — (completed, total).
+    /// `nil` when no pass is running.
+    var enhancementProgress: (completed: Int, total: Int)?
+    var enhancementError: String?
+    private var enhancementTask: Task<Void, Never>?
 
     // See ImportViewModel.swift for why the defaults are built in the body.
     init(
         categorizationService: CategorizationServiceProtocol? = nil,
-        dedupService: DedupServiceProtocol? = nil
+        dedupService: DedupServiceProtocol? = nil,
+        aiEnhancementService: AIEnhancementServiceProtocol? = nil
     ) {
         self.categorizationService = categorizationService ?? CategorizationService()
         self.dedupService = dedupService ?? DedupService()
+        self.aiEnhancementService = aiEnhancementService ?? AIEnhancementService()
     }
 
     /// Applies a category correction to this transaction and, when it has a
@@ -71,12 +81,74 @@ final class LedgerViewModel {
         }
     }
 
-    /// Dismisses a candidate for this session only — it isn't persisted as
-    /// "not a duplicate," so it can resurface on a future review pass. A
-    /// known v1 simplification rather than adding a schema field for it.
+    /// Permanently marks a candidate as not a match — `DedupService`
+    /// excludes it from future scans, so it won't resurface next time the
+    /// review screen reopens.
     func rejectMatch(_ candidate: DedupCandidate) {
+        dedupService.markRejected(candidate)
         pendingDedupCandidates.removeAll {
             $0.transactionId == candidate.transactionId && $0.matchedTransactionId == candidate.matchedTransactionId
         }
+    }
+
+    /// Bulk policy over every pending candidate: transfers (opposite
+    /// directions) above `transferAmountThreshold` are confirmed, at or
+    /// below it are rejected (too small to be worth linking); duplicate
+    /// expenses (same direction) are always rejected. This resolves every
+    /// pending candidate one way or the other — nothing is left over.
+    func bulkResolvePendingCandidates(in transactions: [Transaction], transferAmountThreshold: Decimal) {
+        for candidate in pendingDedupCandidates {
+            guard let a = transactions.first(where: { $0.id == candidate.transactionId }),
+                  let b = transactions.first(where: { $0.id == candidate.matchedTransactionId }) else { continue }
+
+            if a.direction != b.direction && max(a.amount, b.amount) > transferAmountThreshold {
+                confirmMatch(candidate, in: transactions)
+            } else {
+                rejectMatch(candidate)
+            }
+        }
+    }
+
+    /// Re-derives `merchant`/`categoryId` for every given transaction using
+    /// the on-device model — a user-requested, opt-in upgrade over the
+    /// rule-based categorizer applied at import time (see
+    /// AIEnhancementService.swift for why this stays on-device only).
+    /// Runs sequentially, one call per transaction, with progress reported
+    /// via `enhancementProgress`; call `cancelEnhancement()` to stop early
+    /// (whatever's already been enhanced up to that point is kept).
+    func startEnhancement(transactions: [Transaction], modelContext: ModelContext) {
+        guard enhancementTask == nil else { return }
+        enhancementError = nil
+
+        guard aiEnhancementService.isAvailable else {
+            enhancementError = aiEnhancementService.unavailabilityReason ?? "Apple Intelligence is unavailable."
+            return
+        }
+
+        enhancementProgress = (0, transactions.count)
+        enhancementTask = Task { [weak self] in
+            guard let self else { return }
+            for (index, transaction) in transactions.enumerated() {
+                if Task.isCancelled { break }
+                if let (merchant, category) = try? await self.aiEnhancementService.enhance(
+                    rawDescription: transaction.rawDescription,
+                    amount: transaction.amount,
+                    direction: transaction.direction
+                ) {
+                    transaction.merchant = merchant
+                    transaction.categoryId = category
+                }
+                self.enhancementProgress = (index + 1, transactions.count)
+            }
+            try? modelContext.save()
+            self.enhancementProgress = nil
+            self.enhancementTask = nil
+        }
+    }
+
+    func cancelEnhancement() {
+        enhancementTask?.cancel()
+        enhancementTask = nil
+        enhancementProgress = nil
     }
 }

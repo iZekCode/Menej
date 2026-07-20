@@ -30,6 +30,14 @@
 //  surfaced to the user rather than decided by the app — but not treated
 //  as pre-confirmed.
 //
+//  Resolved pairs never resurface: confirmed pairs are excluded because
+//  both transactions now have a non-nil `dedupGroupId`; rejected pairs are
+//  excluded via a persisted rejection list (UserDefaults, same pattern as
+//  CategorizationService's learned corrections) — without this, every
+//  re-scan (e.g. reopening the review screen) would re-propose the exact
+//  same pairs, since the matching logic itself has no memory of past
+//  decisions.
+//
 
 import Foundation
 
@@ -42,9 +50,10 @@ struct DedupCandidate {
 
 protocol DedupServiceProtocol {
     func findCandidates(in transactions: [Transaction]) -> [DedupCandidate]
+    func markRejected(_ candidate: DedupCandidate)
 }
 
-struct DedupService: DedupServiceProtocol {
+final class DedupService: DedupServiceProtocol {
     /// Grey-zone threshold: candidates below this score are surfaced to the
     /// user instead of being merged automatically.
     let confidentMatchThreshold: Double = 0.9
@@ -58,6 +67,15 @@ struct DedupService: DedupServiceProtocol {
     /// treat two genuinely different amounts as the same transaction.
     private let amountToleranceRatio = 0.05
 
+    private static let rejectedPairsKey = "Menej.rejectedDedupPairs"
+    private let userDefaults: UserDefaults
+    private var rejectedPairs: Set<String>
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+        self.rejectedPairs = Set(userDefaults.stringArray(forKey: Self.rejectedPairsKey) ?? [])
+    }
+
     func findCandidates(in transactions: [Transaction]) -> [DedupCandidate] {
         var candidates: [DedupCandidate] = []
 
@@ -66,6 +84,9 @@ struct DedupService: DedupServiceProtocol {
                 let a = transactions[i]
                 let b = transactions[j]
                 guard a.accountId != b.accountId else { continue }
+                // Already linked as a confirmed match — don't re-propose it.
+                guard a.dedupGroupId == nil, b.dedupGroupId == nil else { continue }
+                guard !rejectedPairs.contains(Self.pairKey(a.id, b.id)) else { continue }
 
                 let dateDelta = abs(a.date.timeIntervalSince(b.date))
                 guard dateDelta <= matchWindow else { continue }
@@ -89,5 +110,14 @@ struct DedupService: DedupServiceProtocol {
         }
 
         return candidates.sorted { $0.similarityScore > $1.similarityScore }
+    }
+
+    func markRejected(_ candidate: DedupCandidate) {
+        rejectedPairs.insert(Self.pairKey(candidate.transactionId, candidate.matchedTransactionId))
+        userDefaults.set(Array(rejectedPairs), forKey: Self.rejectedPairsKey)
+    }
+
+    private static func pairKey(_ a: UUID, _ b: UUID) -> String {
+        [a.uuidString, b.uuidString].sorted().joined(separator: "|")
     }
 }
