@@ -125,6 +125,11 @@ final class LedgerViewModel {
             return
         }
 
+        // The issuer hint tells the model which statement format the raw
+        // description is in (GoPay ID junk vs. BCA jargon vs. Grab routes).
+        let accounts = (try? modelContext.fetch(FetchDescriptor<Account>())) ?? []
+        let issuerByAccount = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0.issuer) })
+
         enhancementProgress = (0, transactions.count)
         enhancementTask = Task { [weak self] in
             guard let self else { return }
@@ -133,7 +138,8 @@ final class LedgerViewModel {
                 if let (merchant, category) = try? await self.aiEnhancementService.enhance(
                     rawDescription: transaction.rawDescription,
                     amount: transaction.amount,
-                    direction: transaction.direction
+                    direction: transaction.direction,
+                    issuer: issuerByAccount[transaction.accountId]
                 ) {
                     transaction.merchant = merchant
                     transaction.categoryId = category

@@ -29,7 +29,7 @@ import FoundationModels
 
 @Generable
 struct TransactionEnhancement {
-    @Guide(description: "A short, clean, human-readable merchant or counterparty name with reference codes, transaction IDs, and bank jargon stripped out — e.g. 'DAPOER COWEK 0420260430044124vkmo' becomes 'Dapoer Cowek'. If no real name can be determined, use \"Unknown\".")
+    @Guide(description: "A short, clean, human-readable merchant or counterparty name in title case, with reference codes, transaction IDs, dates, duplicated amounts, and bank jargon stripped out — e.g. 'DAPOER COWEK 0420260430044124vkmo' becomes 'Dapoer Cowek'. Never invent a name that is not in the text; if no real name can be determined, use \"Unknown\".")
     var merchant: String
 
     @Guide(description: "The single best-fit category raw value from the allowed list given in the instructions.")
@@ -43,7 +43,7 @@ enum AIEnhancementError: Error {
 protocol AIEnhancementServiceProtocol {
     var isAvailable: Bool { get }
     var unavailabilityReason: String? { get }
-    func enhance(rawDescription: String, amount: Decimal, direction: Direction) async throws -> (merchant: String, category: Category)
+    func enhance(rawDescription: String, amount: Decimal, direction: Direction, issuer: Issuer?) async throws -> (merchant: String, category: Category)
 }
 
 struct AIEnhancementService: AIEnhancementServiceProtocol {
@@ -76,26 +76,77 @@ struct AIEnhancementService: AIEnhancementServiceProtocol {
 
     private static let categoryList = Category.allCases.map(\.rawValue).joined(separator: ", ")
 
-    func enhance(rawDescription: String, amount: Decimal, direction: Direction) async throws -> (merchant: String, category: Category) {
+    // The instructions are calibrated against the real 15-statement corpus
+    // in `Menej/Financial Statement/`: they teach the model each issuer's
+    // actual junk patterns (GoPay's trailing transaction IDs, myBCA's
+    // e-banking jargon and glued QRIS merchants, Grab's structured
+    // "type: pickup → destination" rows) and ground every category in the
+    // Indonesian merchant vocabulary the statements really contain. The
+    // worked examples are lightly-anonymized real rows from that corpus.
+    private static let instructions = """
+    You clean up messy Indonesian bank and e-wallet statement lines for a personal finance app. \
+    For each transaction, produce a clean merchant/counterparty name and pick the single best \
+    category from exactly this list: \(Self.categoryList).
+
+    How to read each statement format:
+    - GoPay: the merchant name comes first, followed by transaction-ID junk — a long digit string \
+    (often starting with the date) plus a short random token ending in "ID". Drop all of that junk. \
+    Example: "MAMA DJEMPOL GOP 0420260529033702stbA8 87SiAID" → merchant "Mama Djempol".
+    - myBCA e-banking transfer: "TRSF E-BANKING DB 0104/FTSCY/WS95031 50000.00 nasi filbert CAROLINE ANG" — \
+    drop the jargon, the reference code, and the duplicated amount. The trailing UPPERCASE words are the \
+    counterparty's name; short lowercase words before it are the user's own note. Merchant is the \
+    counterparty ("Caroline Ang"); the note tells you what it was for ("nasi" = food).
+    - myBCA card/QRIS: "TRANSAKSI DEBIT TGL: 09/04 QR 912 00000.00PMX KANTIN" — the merchant is glued \
+    after the "00000.00" filler and may be truncated. Merchant "PMX Kantin", category food.
+    - Grab: "Car Standard: Green Office Park 9 → Lobby Oak Apartment (A-99HTHGQWWCQTAV)" is a ride → \
+    merchant "Grab", category transport. "GrabFood: Moon Chicken - AlamSutera → Silkwood Residences (A-…)" \
+    is food delivery → merchant is the restaurant, "Moon Chicken", category food.
+
+    Category rules (Indonesian context):
+    - food: restaurants, warung/warkop/kantin, ayam/bakso/nasi/sate/martabak and similar dishes, \
+    kopi/cafe, bakeries, convenience stores and groceries (Indomaret, Alfamart, Lawson, Farmers Market).
+    - transport: ride-hailing (a Gojek ride in a GoPay statement is titled with the destination, e.g. \
+    "Green Office Park 9 BSD" or "Silkwood Residences", at a 15,000–60,000 fare), parking, fuel, tolls, trains.
+    - bills: pulsa and mobile data (IM3, Telkomsel), GoTagihan, electricity, internet (Netciti, IndiHome), \
+    laundry (Wash Xpress), subscriptions, admin fees, transfer fees, taxes (PAJAK).
+    - transfer: e-wallet/e-money top-ups (GoPay, OVO, ShopeePay, Flazz), virtual-account payments, and \
+    transfers between the user's own accounts (the account holder's own name as counterparty).
+    - income: money received — salary, transfers in from other people, reimbursements, refunds, \
+    bank interest (BUNGA).
+    - shopping: marketplaces (Shopee, Tokopedia), department and retail stores (AEON, Uniqlo).
+    - entertainment: cinema (XXI), streaming and app stores (Netflix, Spotify, Google Play, Apple), \
+    games, hotels, Airbnb.
+    - health: apotek, klinik, dokter, hospitals. education: universities (UNIV), schools, courses.
+    - other: only when nothing else genuinely fits. Never guess a spending category for money in.
+
+    Worked examples:
+    - "DAPOER COWEK 0420260518050724h083 hsHbxbID", money out → merchant "Dapoer Cowek", food
+    - "GoTagihan 01202605150619233Jnrb 4G40CID", money out → merchant "GoTagihan", bills
+    - "TRSF E-BANKING DB 1004/FTFVA/WS95031 70001/GOPAY TOPUP 0895637512739", money out → merchant "GoPay Top Up", transfer
+    - "TRSF E-BANKING CR 0306/FTSCY/WS95031 7000000.00 LEDYAWATY", money in → merchant "Ledyawaty", income
+    - "TRANSAKSI DEBIT TGL: 22/04 QR 008 00000.00AEON STORE", money out → merchant "AEON Store", shopping
+    - "BI-FAST DB BIF TRANSFER KE 022 0T01/19", money out → merchant "Bank Transfer", transfer
+    - "Ditransfer ke Roy Harianja 0420260622072354Vxgp UJMeQPID", money out → merchant "Roy Harianja", transfer
+    - "BYR VIA E-BANKING 30/06 WSID9503103 0404 UNIV. BINUS 270223569622", money out → merchant "BINUS University", education
+    """
+
+    func enhance(rawDescription: String, amount: Decimal, direction: Direction, issuer: Issuer?) async throws -> (merchant: String, category: Category) {
         guard isAvailable else {
             throw AIEnhancementError.unavailable(unavailabilityReason ?? "Apple Intelligence is unavailable.")
         }
 
-        let session = LanguageModelSession(instructions: """
-        You clean up messy bank and e-wallet statement transaction descriptions for a personal finance app. \
-        Extract a short, human-readable merchant or counterparty name, and pick the single best category \
-        from exactly this list: \(Self.categoryList). \
-        Use "transfer" only for a movement between the user's own accounts, or bank fees/interest. \
-        Use "income" for money received. Use "other" only if nothing else genuinely fits.
-        """)
+        let session = LanguageModelSession(instructions: Self.instructions)
 
-        let prompt = """
-        Raw description: \(rawDescription)
-        Amount: \(amount)
-        Direction: \(direction == .debit ? "money out" : "money in")
-        """
+        var promptLines = [
+            "Raw description: \(rawDescription)",
+            "Amount: IDR \(amount)",
+            "Direction: \(direction == .debit ? "money out" : "money in")",
+        ]
+        if let issuer {
+            promptLines.append("Statement source: \(issuer.displayName)")
+        }
 
-        let response = try await session.respond(to: prompt, generating: TransactionEnhancement.self)
+        let response = try await session.respond(to: promptLines.joined(separator: "\n"), generating: TransactionEnhancement.self)
         let category = Category(rawValue: response.content.categoryRawValue) ?? .other
         return (response.content.merchant, category)
     }

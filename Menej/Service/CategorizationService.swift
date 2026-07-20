@@ -6,11 +6,18 @@
 //  Learns from corrections: one correction creates a permanent merchant rule
 //  and applies retroactively to past transactions sharing that merchant.
 //
-//  The bundled dictionary (MerchantDictionary.json) only covers recognizable
-//  national brands (Indomaret, Netflix, GrabFood, etc.) — real statements
-//  are full of hyper-local merchants (a specific warung, a specific kos-an)
-//  no bundled dictionary can know in advance. Those stay `.other` until the
-//  user corrects one once, same as the PRD describes.
+//  Matching is layered, calibrated against the real 15-statement corpus in
+//  `Menej/Financial Statement/`:
+//    1. user corrections (a fixed miscategorization stays fixed)
+//    2. bundled dictionary (MerchantDictionary.json — recognizable brands
+//       plus this corpus's recurring merchants)
+//    3. generic Indonesian merchant-word heuristics ("kantin", "ayam",
+//       "pulsa", "apotek", …) — category only, merchant left nil, because a
+//       generic word is not a safe retroactive-correction key
+//    4. issuer/boilerplate fallbacks (BCA transfer jargon, Grab rides)
+//    5. direction sanity: money IN can only be income/transfer/investment —
+//       a keyword match against a spending category (e.g. an incoming
+//       reimbursement whose note mentions "airbnb") is coerced to income
 //
 //  Retroactive correction only applies to transactions whose merchant is a
 //  known dictionary/learned keyword — deliberately not to a heuristically
@@ -31,7 +38,10 @@ protocol CategorizationServiceProtocol {
     /// can't: a Grab *ride* description is just pickup/dropoff addresses —
     /// it never contains the word "Grab" — so without the issuer hint every
     /// non-GrabFood ride would fall through to `.other`.
-    func categorize(rawDescription: String, issuer: Issuer?) -> (merchant: String?, category: Category)
+    ///
+    /// `direction`, when known, keeps money-in sane: credits can only be
+    /// income/transfer/investment (see file header).
+    func categorize(rawDescription: String, issuer: Issuer?, direction: Direction?) -> (merchant: String?, category: Category)
     func recordCorrection(merchant: String, category: Category)
 }
 
@@ -51,15 +61,85 @@ final class CategorizationService: CategorizationServiceProtocol {
     private var userCorrections: [String: Category]
     private let userDefaults: UserDefaults
 
+    // MARK: - Generic keyword heuristics (category only, merchant nil)
+    //
+    // Words that recognizably describe what a hyper-local merchant *is*
+    // ("PMX KANTIN KASTURI", "RM Sinar Minang", "Ayam Gepuk Pak Gembus")
+    // even when the merchant itself can't be in any bundled dictionary.
+    // Checked in this order; keep entries lowercase. Trailing spaces are
+    // deliberate where a bare prefix would over-match ("rm " vs "warm").
+
+    private static let foodKeywords = [
+        "warung", "warkop", "kantin", "kopitiam", "restoran", "resto", "rumah makan", "rm ",
+        "masakan", "dapoer", "dapur", "catering", "kuliner",
+        "ayam", "bakso", "bakmi", "mie ", "nasi", "sate", "soto", "seafood", "tahu",
+        "martabak", "bubur", "dimsum", "geprek", "penyet", "gepuk", "padang", "minang",
+        "bakery", "roti", "donat", "kopi", "coffee", "cafe", "boba", "juice",
+        "grill", "steak", "sushi", "ramen", "burger", "pizza", "kebab", "snack", "jajan",
+    ]
+    private static let billsKeywords = [
+        "pulsa", "tagihan", "listrik", "token pln", "laundry", "wash",
+        "internet", "wifi", "bpjs", "asuransi", "pajak", "biaya",
+    ]
+    private static let transportKeywords = [
+        "parkir", "parking", "bensin", "pertamina", "spbu", "toll", "tol ",
+        "mrt", "transjakarta", "krl", "kereta", "bluebird", "taksi", "taxi",
+        // A Gojek ride in a GoPay statement is titled with the destination
+        // POI, not "Gojek" — confirmed against the corpus: dozens of
+        // payments named after the user's home/office at exact ride-fare
+        // amounts (33.5k–51.5k) at commute times, on days complementary to
+        // the Grab statements' rides. Grab's own rows never reach this
+        // layer (the issuer fallback short-circuits first), so these
+        // POI names can't mislabel Grab transactions.
+        "green office park", "silkwood residences",
+    ]
+    private static let healthKeywords = [
+        "apotek", "apotik", "farma", "klinik", "dokter", "rumah sakit", "hospital", "medika",
+    ]
+    private static let educationKeywords = [
+        "univ", "sekolah", "kampus", "kursus", "course", "udemy", "coursera",
+    ]
+    private static let entertainmentKeywords = [
+        "hotel", "bioskop", "karaoke", "konser", "concert", "steam", "playstation",
+    ]
+    private static let keywordLayers: [([String], Category)] = [
+        (foodKeywords, .food),
+        (billsKeywords, .bills),
+        (transportKeywords, .transport),
+        (healthKeywords, .health),
+        (educationKeywords, .education),
+        (entertainmentKeywords, .entertainment),
+    ]
+
+    /// Transfer boilerplate — BCA interbank/e-banking jargon plus GoPay's
+    /// P2P send ("Ditransfer ke <name>"): a transfer to or from another
+    /// person/account, with no merchant in the text. ("biaya txn" fee rows
+    /// match the dictionary's "Transfer Fee" first and never reach this.)
+    private static let transferMarkers = ["trsf e-banking", "bi-fast", "byr via e-banking", "ditransfer ke", "diterima dari"]
+
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         self.bundledRules = Self.loadBundledRules()
         self.userCorrections = Self.loadUserCorrections(from: userDefaults)
     }
 
-    func categorize(rawDescription: String, issuer: Issuer? = nil) -> (merchant: String?, category: Category) {
+    func categorize(rawDescription: String, issuer: Issuer? = nil, direction: Direction? = nil) -> (merchant: String?, category: Category) {
         let lowered = rawDescription.lowercased()
+        let (merchant, category) = match(lowered, issuer: issuer, direction: direction)
 
+        // Money IN can only be income, a transfer, or an investment
+        // return — a spending-category keyword inside a credit (e.g. an
+        // incoming reimbursement whose sender note says "airbnb") is about
+        // what the *sender* did, not what the user bought. The merchant is
+        // dropped along with the coerced category so a later correction on
+        // that merchant can't silently recategorize real purchases.
+        if direction == .credit, ![.income, .transfer, .investment].contains(category) {
+            return (nil, .income)
+        }
+        return (merchant, category)
+    }
+
+    private func match(_ lowered: String, issuer: Issuer?, direction: Direction?) -> (String?, Category) {
         // User corrections take priority over the bundled dictionary so a
         // fixed miscategorization stays fixed.
         for (merchant, category) in userCorrections where lowered.contains(merchant.lowercased()) {
@@ -70,9 +150,22 @@ final class CategorizationService: CategorizationServiceProtocol {
         }
         // Every Grab statement transaction is either a ride or a GrabFood
         // order — GrabFood already matched above via the bundled dictionary
-        // ("grabfood"), so anything left from this issuer is a ride.
+        // ("grabfood"), so anything left from this issuer is a ride. Checked
+        // BEFORE the generic keyword layers: a ride's pickup/destination is
+        // an address, and an address like "Hariston Hotel & Suites" must not
+        // drag the ride into the entertainment category.
         if issuer == .grab {
             return ("Grab", .transport)
+        }
+        for (keywords, category) in Self.keywordLayers where keywords.contains(where: lowered.contains) {
+            return (nil, category)
+        }
+        if Self.transferMarkers.contains(where: lowered.contains) {
+            // The note travelling with a transfer already had its chance to
+            // match above ("nasi …" → food); plain transfer boilerplate is a
+            // transfer going out, and money coming in from someone else's
+            // account is income.
+            return (nil, direction == .credit ? .income : .transfer)
         }
         return (nil, .other)
     }

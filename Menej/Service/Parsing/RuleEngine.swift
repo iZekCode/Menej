@@ -98,6 +98,7 @@ struct RuleEngine: RuleEngineProtocol {
             var recordLines = [line, timeLine]
             var cursor = index + 2
             var terminated = false
+            var coinsOnly = false
 
             while cursor < lines.count {
                 let next = lines[cursor].trimmingCharacters(in: .whitespaces)
@@ -110,13 +111,23 @@ struct RuleEngine: RuleEngineProtocol {
                     break
                 }
                 recordLines.append(next)
-                if matches(goPayAmountLine, next) || matches(goPayCoinsOnlyLine, next) {
+                if matches(goPayAmountLine, next) {
                     terminated = true
+                    break
+                }
+                if matches(goPayCoinsOnlyLine, next) {
+                    terminated = true
+                    coinsOnly = true
                     break
                 }
             }
 
-            if terminated {
+            // Cashback/loyalty-point-only records ("Cashback X … GoPay
+            // Coins 29") aren't money movement — skip them here rather than
+            // emitting them as raw rows, so ConfidenceScorer doesn't count
+            // deliberately-skipped rows as parse failures (they dragged real
+            // statements down to 0.59 "confidence" on a perfect parse).
+            if terminated && !coinsOnly {
                 rows.append(RawTransactionRow(rawLines: recordLines, sourceLineNumber: startLine))
             }
             index = cursor

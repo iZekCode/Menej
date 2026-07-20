@@ -122,7 +122,8 @@ final class ImportViewModel {
                 // until the user corrects one.
                 let (merchant, category) = categorizationService.categorize(
                     rawDescription: parsedTransaction.rawDescription,
-                    issuer: statement.issuer
+                    issuer: statement.issuer,
+                    direction: parsedTransaction.direction
                 )
                 let transaction = Transaction(
                     accountId: account.id,

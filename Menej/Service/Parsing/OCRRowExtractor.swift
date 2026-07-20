@@ -24,10 +24,9 @@
 //  Validated against all 5 real statements per issuer using the actual
 //  ParsingService pipeline: Grab is exact (delta 0) on order count and
 //  total; myBCA reconciles exactly against the statement's own "SALDO
-//  AWAL"/"SALDO AKHIR"/"MUTASI CR"/"MUTASI DB" footer on 3 of 5 months, and
-//  within ~30,000 IDR (one transaction) on the other 2 — a dramatic
-//  improvement over the old text-layer parser, which was off by millions of
-//  IDR on 4 of 5 months.
+//  AWAL"/"SALDO AKHIR" footer on all 5 months (the last two months' ~30k
+//  gaps were records whose date the OCR misread — "27102" for "27/02" —
+//  recovered by the tolerant date-anchor matching below).
 //
 
 import Foundation
@@ -87,9 +86,16 @@ enum OCRRowExtractor {
     // MARK: - Grab
 
     // Each record: a date line ("30 Apr 2026,") anchors the record; every
-    // other text block whose Y falls between that anchor and the next one
-    // belongs to the same record — robust to Grab's two-line-per-record
-    // wrapping (addresses/merchant names wrap to a second line).
+    // other text block whose Y falls in that anchor's band belongs to the
+    // same record — robust to Grab's two-line-per-record wrapping
+    // (addresses/merchant names wrap to a second line).
+    //
+    // A record's first description line renders slightly ABOVE its own date
+    // anchor (up to ~0.002 in normalized Y, measured across the corpus), so
+    // both band edges get the same tolerance. The bands must be disjoint:
+    // an overlap here duplicated the next record's first line into the
+    // previous record's description (the "overlapping transactions" bug).
+    private static let grabAnchorTolerance = 0.005
     private static let grabDateAnchor = try! NSRegularExpression(pattern: #"^\d{1,2} \w+ \d{4},?$"#)
     private static let grabTimeLine = try! NSRegularExpression(pattern: #"^\d{1,2}:\d{2}(AM|PM)$"#)
     private static let grabAmountLine = try! NSRegularExpression(pattern: #"^[\d]+\.\d{2}$"#)
@@ -114,24 +120,51 @@ enum OCRRowExtractor {
         for (position, anchorIndex) in anchorIndices.enumerated() {
             let anchorY = sorted[anchorIndex].y
             let nextAnchorY = position + 1 < anchorIndices.count ? sorted[anchorIndices[position + 1]].y : -Double.infinity
-            let bucket = sorted.filter { $0.y <= anchorY + 0.002 && $0.y > nextAnchorY }
+            let bucket = sorted.filter { $0.y <= anchorY + grabAnchorTolerance && $0.y > nextAnchorY + grabAnchorTolerance }
 
             let dateText = sorted[anchorIndex].text
             let timeText = bucket.first { matches(grabTimeLine, $0.text) }?.text ?? ""
             let amountText = bucket.first { $0.x > 0.85 && matches(grabAmountLine, $0.text) }?.text ?? ""
-            let description = bucket
-                .filter { $0.text != dateText && $0.text != "IDR" && $0.text != timeText && !($0.x > 0.85 && matches(grabAmountLine, $0.text)) }
-                .sorted { abs($0.y - $1.y) > 0.003 ? $0.y > $1.y : $0.x < $1.x }
-                .map(\.text)
-                .joined(separator: " ")
 
             guard !amountText.isEmpty else { continue }
             rows.append(RawTransactionRow(
-                rawLines: [dateText, timeText, amountText, description],
+                rawLines: [dateText, timeText, amountText, grabDescription(from: bucket)],
                 sourceLineNumber: sourceLineNumber
             ))
         }
         return rows
+    }
+
+    /// The statement's table columns sit at stable X positions: booking code
+    /// ~0.156, pickup address ~0.31, destination address ~0.54, service type
+    /// ~0.75 ("Car"+"Standard", "GrabFood", …), then "IDR" and the amount.
+    /// Reassembling by column instead of quasi-reading-order fixes the old
+    /// word salad ("Lobby Oak Apartment Car A-99… Green Office Park 9 …")
+    /// and yields a description both the categorizer and the on-device LLM
+    /// can actually read: "GrabFood: Moon Chicken - AlamSutera → Silkwood
+    /// Residences (A-98QWXJ8WX4BDAV)".
+    private static func grabDescription(from bucket: [Item]) -> String {
+        // "IDR" is the currency column, not part of any text column — but in
+        // some months' layout it renders left enough to land inside the
+        // service-type column's X range, so it's dropped by name.
+        func column(_ range: Range<Double>) -> String {
+            bucket
+                .filter { range.contains($0.x) && $0.text != "IDR" }
+                .sorted { abs($0.y - $1.y) > 0.003 ? $0.y > $1.y : $0.x < $1.x }
+                .map(\.text)
+                .joined(separator: " ")
+        }
+        let booking = column(0.10..<0.25)
+        let pickup = column(0.25..<0.45)
+        let destination = column(0.45..<0.70)
+        let serviceType = column(0.70..<0.83)
+
+        var parts: [String] = []
+        if !serviceType.isEmpty { parts.append("\(serviceType):") }
+        if !pickup.isEmpty { parts.append(pickup) }
+        if !destination.isEmpty { parts.append("→ \(destination)") }
+        if !booking.isEmpty { parts.append("(\(booking))") }
+        return parts.joined(separator: " ")
     }
 
     // MARK: - myBCA
@@ -144,7 +177,25 @@ enum OCRRowExtractor {
     // row below when the row wraps. Continuation rows (extra description
     // lines) are consumed until the next date row or a recognized
     // furniture/footer row.
-    private static let bcaDateAnchor = try! NSRegularExpression(pattern: #"^\d{2}/\d{2}$"#)
+    // The separator class accepts OCR misreads of the slash: real statements
+    // produced "27102" for "27/02" and "27106" for "27/06" (slash read as a
+    // digit 1), which made the whole record invisible as an anchor — it was
+    // then swallowed into the previous record's continuation lines and its
+    // amount silently dropped (the source of both months' ~30k
+    // reconciliation gaps). Day/month are validated in bcaCanonicalDate so
+    // the loosened separator can't promote arbitrary 4–5 char strings.
+    private static let bcaDateAnchor = try! NSRegularExpression(pattern: #"^(\d{2})[/1Il|\\](\d{2})$"#)
+
+    /// Returns the canonical "DD/MM" for a date-column token, tolerating
+    /// OCR-misread separators, or nil when the token isn't a plausible date.
+    static func bcaCanonicalDate(_ text: String) -> String? {
+        guard let match = bcaDateAnchor.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let dayRange = Range(match.range(at: 1), in: text),
+              let monthRange = Range(match.range(at: 2), in: text),
+              let day = Int(text[dayRange]), let month = Int(text[monthRange]),
+              (1...31).contains(day), (1...12).contains(month) else { return nil }
+        return "\(text[dayRange])/\(text[monthRange])"
+    }
     private static let bcaAmountToken = try! NSRegularExpression(pattern: #"^([\d,.]+)\s*(DB|CR)?$"#)
     private static let bcaLooseAmountToken = try! NSRegularExpression(pattern: #"^[\d,.]{4,}$"#)
     private static let bcaPeriodLine = try! NSRegularExpression(pattern: #"PERIODE"#)
@@ -233,7 +284,10 @@ enum OCRRowExtractor {
         var i = 0
         while i < rows.count {
             let row = rows[i]
-            guard let dateItem = row.items.first(where: { $0.x < 0.10 && matches(bcaDateAnchor, $0.text) }) else {
+            guard let canonicalDate = row.items.lazy
+                .filter({ $0.x < 0.10 })
+                .compactMap({ bcaCanonicalDate($0.text) })
+                .first else {
                 i += 1
                 continue
             }
@@ -252,7 +306,7 @@ enum OCRRowExtractor {
             while j < rows.count {
                 let next = rows[j]
                 if isBCAFurnitureRow(next) { break }
-                if next.items.contains(where: { $0.x < 0.10 && matches(bcaDateAnchor, $0.text) }) { break }
+                if next.items.contains(where: { $0.x < 0.10 && bcaCanonicalDate($0.text) != nil }) { break }
                 descParts.append(contentsOf: next.items.filter { $0.x >= 0.10 && $0.x < 0.60 }.sorted { $0.x < $1.x }.map(\.text))
                 if amountText == nil, let amount = next.items.first(where: { $0.x >= 0.60 && $0.x < 0.80 }) {
                     amountText = amount.text
@@ -269,7 +323,7 @@ enum OCRRowExtractor {
             let marker = Range(amountMatch.range(at: 2), in: amountText).map { String(amountText[$0]) } ?? ""
 
             records.append(RawTransactionRow(
-                rawLines: [dateItem.text, descParts.joined(separator: " "), String(amountText[amountRange]), marker],
+                rawLines: [canonicalDate, descParts.joined(separator: " "), String(amountText[amountRange]), marker],
                 sourceLineNumber: sourceLineNumber,
                 periodYear: periodYear
             ))
