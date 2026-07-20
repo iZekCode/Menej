@@ -52,7 +52,20 @@ struct ImportFlowView: View {
                     viewModel.importFiles(urls)
                 }
             }
+            .onAppear(perform: importPendingSharedFiles)
         }
+    }
+
+    /// Picks up PDFs the share extension dropped in the App Group container
+    /// (MenejShareExtension/ShareViewController.swift) — the extension's own
+    /// process can't reach ImportViewModel directly, so this is the handoff
+    /// point. Files are moved into the app's own storage before parsing (see
+    /// SharedImportInbox.moveIntoAppStorage) so the URL stays valid through
+    /// the whole review flow, not just the initial parse.
+    private func importPendingSharedFiles() {
+        let moved = SharedImportInbox.pendingFiles().compactMap(SharedImportInbox.moveIntoAppStorage)
+        guard !moved.isEmpty else { return }
+        viewModel.importFiles(moved)
     }
 }
 

@@ -6,7 +6,18 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		273842AC300DF36500F0474B /* MenejShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 273842A2300DF36500F0474B /* MenejShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		273842AA300DF36500F0474B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 277F85DC300CC7C000EDBFB9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 273842A1300DF36500F0474B;
+			remoteInfo = MenejShareExtension;
+		};
 		277F869D300CD02700EDBFB9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 277F85DC300CC7C000EDBFB9 /* Project object */;
@@ -16,12 +27,45 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		273842AD300DF36500F0474B /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				273842AC300DF36500F0474B /* MenejShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		273842A2300DF36500F0474B /* MenejShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MenejShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		277F85E4300CC7C100EDBFB9 /* Menej.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Menej.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		277F8699300CD02700EDBFB9 /* MenejTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MenejTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		273842B0300DF36500F0474B /* Exceptions for "MenejShareExtension" folder in "MenejShareExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 273842A1300DF36500F0474B /* MenejShareExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		273842A3300DF36500F0474B /* MenejShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				273842B0300DF36500F0474B /* Exceptions for "MenejShareExtension" folder in "MenejShareExtension" target */,
+			);
+			path = MenejShareExtension;
+			sourceTree = "<group>";
+		};
 		277F85E6300CC7C100EDBFB9 /* Menej */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Menej;
@@ -35,6 +79,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		2738429F300DF36500F0474B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		277F85E1300CC7C100EDBFB9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -57,6 +108,7 @@
 			children = (
 				277F85E6300CC7C100EDBFB9 /* Menej */,
 				277F869A300CD02700EDBFB9 /* MenejTests */,
+				273842A3300DF36500F0474B /* MenejShareExtension */,
 				277F85E5300CC7C100EDBFB9 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -66,6 +118,7 @@
 			children = (
 				277F85E4300CC7C100EDBFB9 /* Menej.app */,
 				277F8699300CD02700EDBFB9 /* MenejTests.xctest */,
+				273842A2300DF36500F0474B /* MenejShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -73,6 +126,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		273842A1300DF36500F0474B /* MenejShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 273842B1300DF36500F0474B /* Build configuration list for PBXNativeTarget "MenejShareExtension" */;
+			buildPhases = (
+				2738429E300DF36500F0474B /* Sources */,
+				2738429F300DF36500F0474B /* Frameworks */,
+				273842A0300DF36500F0474B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				273842A3300DF36500F0474B /* MenejShareExtension */,
+			);
+			name = MenejShareExtension;
+			packageProductDependencies = (
+			);
+			productName = MenejShareExtension;
+			productReference = 273842A2300DF36500F0474B /* MenejShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		277F85E3300CC7C100EDBFB9 /* Menej */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 277F85EF300CC7C100EDBFB9 /* Build configuration list for PBXNativeTarget "Menej" */;
@@ -80,10 +155,12 @@
 				277F85E0300CC7C100EDBFB9 /* Sources */,
 				277F85E1300CC7C100EDBFB9 /* Frameworks */,
 				277F85E2300CC7C100EDBFB9 /* Resources */,
+				273842AD300DF36500F0474B /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				273842AB300DF36500F0474B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				277F85E6300CC7C100EDBFB9 /* Menej */,
@@ -128,6 +205,9 @@
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					273842A1300DF36500F0474B = {
+						CreatedOnToolsVersion = 26.6;
+					};
 					277F85E3300CC7C100EDBFB9 = {
 						CreatedOnToolsVersion = 26.6;
 					};
@@ -153,11 +233,19 @@
 			targets = (
 				277F85E3300CC7C100EDBFB9 /* Menej */,
 				277F8698300CD02700EDBFB9 /* MenejTests */,
+				273842A1300DF36500F0474B /* MenejShareExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		273842A0300DF36500F0474B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		277F85E2300CC7C100EDBFB9 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -175,6 +263,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		2738429E300DF36500F0474B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		277F85E0300CC7C100EDBFB9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -192,6 +287,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		273842AB300DF36500F0474B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 273842A1300DF36500F0474B /* MenejShareExtension */;
+			targetProxy = 273842AA300DF36500F0474B /* PBXContainerItemProxy */;
+		};
 		277F869E300CD02700EDBFB9 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 277F85E3300CC7C100EDBFB9 /* Menej */;
@@ -200,6 +300,64 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		273842AE300DF36500F0474B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MenejShareExtension/MenejShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZU2326AL7G;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MenejShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MenejShareExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Filbert.Menej.MenejShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		273842AF300DF36500F0474B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MenejShareExtension/MenejShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZU2326AL7G;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MenejShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MenejShareExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Filbert.Menej.MenejShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		277F85ED300CC7C100EDBFB9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -326,6 +484,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Menej/Menej.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = ZU2326AL7G;
@@ -358,6 +517,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Menej/Menej.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = ZU2326AL7G;
@@ -430,6 +590,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		273842B1300DF36500F0474B /* Build configuration list for PBXNativeTarget "MenejShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				273842AE300DF36500F0474B /* Debug */,
+				273842AF300DF36500F0474B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		277F85DF300CC7C000EDBFB9 /* Build configuration list for PBXProject "Menej" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
