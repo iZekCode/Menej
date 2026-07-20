@@ -48,6 +48,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		270466E9300E50F400AE3670 /* Exceptions for "Menej" folder in "Menej" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 277F85E3300CC7C100EDBFB9 /* Menej */;
+		};
 		273842B0300DF36500F0474B /* Exceptions for "MenejShareExtension" folder in "MenejShareExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -68,6 +75,9 @@
 		};
 		277F85E6300CC7C100EDBFB9 /* Menej */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				270466E9300E50F400AE3670 /* Exceptions for "Menej" folder in "Menej" target */,
+			);
 			path = Menej;
 			sourceTree = "<group>";
 		};
@@ -490,6 +500,8 @@
 				DEVELOPMENT_TEAM = ZU2326AL7G;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Menej/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -523,6 +535,8 @@
 				DEVELOPMENT_TEAM = ZU2326AL7G;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Menej/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

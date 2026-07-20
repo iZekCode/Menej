@@ -1,111 +1,114 @@
 //
-//  PhysicalAssetsView.swift
+//  InventoryView.swift
 //  Menej
 //
-//  See PRD §6 F6. Electronics, vehicles, watches, jewelry — some categories
-//  appreciate (watches, jewelry), so the curve runs both directions.
+//  Physical inventory (PRD §6 F6) — electronics, vehicles, watches, jewelry.
+//  Some categories appreciate (watches, jewelry), so the value curve runs
+//  both directions. Promoted to a top-level tab; each item can carry a photo.
 //
 
 import SwiftUI
 import SwiftData
+import PhotosUI
 
-struct PhysicalAssetsView: View {
+struct InventoryView: View {
     @Environment(\.modelContext) private var modelContext
     // A `#Predicate` with several `||` enum comparisons hits a known Swift
     // compiler type-checking limit ("unable to type-check in reasonable
     // time"). Filtering in Swift after a plain fetch sidesteps it.
     @Query private var allAssets: [Asset]
 
-    @State private var assetBeingEdited: Asset?
-    @State private var isAddingAsset = false
+    @State private var itemBeingEdited: Asset?
+    @State private var isAddingItem = false
 
     private let reminderService = WarrantyReminderService()
 
-    private var assets: [Asset] {
+    private var items: [Asset] {
         allAssets.filter(\.type.isPhysical)
             .sorted { $0.currentValue > $1.currentValue }
     }
 
-    // No NavigationStack of its own — pushed onto NetWorthHomeView's stack
-    // from the asset breakdown.
     var body: some View {
-        List {
-            if assets.isEmpty {
-                EmptyStateView(
-                    systemImage: "briefcase",
-                    title: "No physical assets yet",
-                    message: "Add electronics, vehicles, watches, or jewelry to include them in your net worth."
-                )
-            } else {
-                Section {
-                    ForEach(assets) { asset in
-                        Button {
-                            assetBeingEdited = asset
-                        } label: {
-                            AssetRow(asset: asset)
+        NavigationStack {
+            List {
+                if items.isEmpty {
+                    EmptyStateView(
+                        systemImage: "shippingbox",
+                        title: "No items yet",
+                        message: "Add electronics, vehicles, watches, or jewelry to track them and include them in your net worth."
+                    )
+                } else {
+                    Section {
+                        ForEach(items) { item in
+                            Button {
+                                itemBeingEdited = item
+                            } label: {
+                                InventoryRow(item: item)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        .onDelete(perform: deleteItems)
+                    } footer: {
+                        Text("Values follow a per-category curve unless set manually. Tap an item to edit it.")
                     }
-                    .onDelete(perform: deleteAssets)
-                } footer: {
-                    Text("Values follow a per-category curve unless set manually. Tap an asset to edit it.")
                 }
             }
-        }
-        .navigationTitle("Physical Assets")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Add Asset", systemImage: "plus") {
-                    isAddingAsset = true
+            .navigationTitle("Inventory")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Add Item", systemImage: "plus") {
+                        isAddingItem = true
+                    }
                 }
             }
+            .sheet(isPresented: $isAddingItem) {
+                InventoryItemFormView(item: nil)
+            }
+            .sheet(item: $itemBeingEdited) { item in
+                InventoryItemFormView(item: item)
+            }
+            .onAppear(perform: applyCurves)
         }
-        .sheet(isPresented: $isAddingAsset) {
-            AssetFormView(asset: nil)
-        }
-        .sheet(item: $assetBeingEdited) { asset in
-            AssetFormView(asset: asset)
-        }
-        .onAppear(perform: applyCurves)
     }
 
     /// Depreciation/appreciation drifts with time, not with edits — re-apply
     /// curves whenever the list appears so displayed values (and net worth,
     /// which reads the same stored `currentValue`) stay current.
     private func applyCurves() {
-        for asset in assets {
-            asset.applyCurveIfNeeded()
+        for item in items {
+            item.applyCurveIfNeeded()
         }
     }
 
-    private func deleteAssets(at offsets: IndexSet) {
+    private func deleteItems(at offsets: IndexSet) {
         for index in offsets {
-            let asset = assets[index]
-            reminderService.cancelReminders(assetId: asset.id)
-            modelContext.delete(asset)
+            let item = items[index]
+            reminderService.cancelReminders(assetId: item.id)
+            modelContext.delete(item)
         }
     }
 }
 
-private struct AssetRow: View {
-    let asset: Asset
+private struct InventoryRow: View {
+    let item: Asset
 
     var body: some View {
-        HStack {
+        HStack(spacing: AppSpacing.grid) {
+            ItemThumbnail(photoData: item.photoData)
             VStack(alignment: .leading, spacing: 2) {
-                Text(asset.name)
+                Text(item.name)
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            AmountText(amount: asset.currentValue)
+            AmountText(amount: item.currentValue)
         }
     }
 
     private var subtitle: String {
-        var parts = [asset.type.displayName]
-        if let warrantyExpiresAt = asset.warrantyExpiresAt {
+        var parts = [item.type.displayName]
+        if let warrantyExpiresAt = item.warrantyExpiresAt {
             let style = Date.FormatStyle(date: .abbreviated, time: .omitted)
             parts.append(
                 warrantyExpiresAt > .now
@@ -117,12 +120,35 @@ private struct AssetRow: View {
     }
 }
 
-private struct AssetFormView: View {
+/// Small square thumbnail — the item's photo, or a category-neutral
+/// placeholder when there isn't one.
+private struct ItemThumbnail: View {
+    let photoData: Data?
+
+    var body: some View {
+        Group {
+            if let photoData, let uiImage = UIImage(data: photoData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "shippingbox")
+                    .foregroundStyle(.secondary)
+                    .font(.title3)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct InventoryItemFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    /// nil = creating a new asset.
-    let asset: Asset?
+    /// nil = creating a new item.
+    let item: Asset?
 
     @State private var type: AssetType = .electronics
     @State private var name = ""
@@ -132,6 +158,8 @@ private struct AssetFormView: View {
     @State private var manualValue: Decimal?
     @State private var hasWarranty = false
     @State private var warrantyExpiresAt = Date()
+    @State private var photoData: Data?
+    @State private var selectedPhoto: PhotosPickerItem?
 
     private let depreciationService = DepreciationService()
     private let reminderService = WarrantyReminderService()
@@ -156,6 +184,8 @@ private struct AssetFormView: View {
     var body: some View {
         NavigationStack {
             Form {
+                photoSection
+
                 Section {
                     Picker("Category", selection: $type) {
                         ForEach(Self.physicalTypes) { type in
@@ -195,18 +225,55 @@ private struct AssetFormView: View {
                     }
                 }
             }
-            .navigationTitle(asset == nil ? "Add Asset" : "Edit Asset")
+            .navigationTitle(item == nil ? "Add Item" : "Edit Item")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(asset == nil ? "Add" : "Save") { save() }
+                    Button(item == nil ? "Add" : "Save") { save() }
                         .disabled(!canSave)
                 }
             }
             .onAppear(perform: populateFromExisting)
+            .onChange(of: selectedPhoto) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self) {
+                        photoData = data
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var photoSection: some View {
+        Section {
+            HStack(spacing: AppSpacing.margin) {
+                ItemThumbnail(photoData: photoData)
+                    .frame(width: 64, height: 64)
+                VStack(alignment: .leading, spacing: 4) {
+                    PhotosPicker(
+                        selection: $selectedPhoto,
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        Label(photoData == nil ? "Add Photo" : "Change Photo", systemImage: "photo")
+                    }
+                    if photoData != nil {
+                        Button(role: .destructive) {
+                            photoData = nil
+                            selectedPhoto = nil
+                        } label: {
+                            Label("Remove Photo", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+        } footer: {
+            Text("Pick a photo from your library. It's stored on-device only.")
         }
     }
 
@@ -221,15 +288,16 @@ private struct AssetFormView: View {
     }
 
     private func populateFromExisting() {
-        guard let asset else { return }
-        type = asset.type
-        name = asset.name
-        acquiredAt = asset.acquiredAt
-        acquisitionCost = asset.acquisitionCost
-        usesCurve = asset.depreciationCurve != nil
-        manualValue = asset.currentValue
-        hasWarranty = asset.warrantyExpiresAt != nil
-        warrantyExpiresAt = asset.warrantyExpiresAt ?? Date()
+        guard let item else { return }
+        type = item.type
+        name = item.name
+        acquiredAt = item.acquiredAt
+        acquisitionCost = item.acquisitionCost
+        usesCurve = item.depreciationCurve != nil
+        manualValue = item.currentValue
+        hasWarranty = item.warrantyExpiresAt != nil
+        warrantyExpiresAt = item.warrantyExpiresAt ?? Date()
+        photoData = item.photoData
     }
 
     private func save() {
@@ -238,15 +306,16 @@ private struct AssetFormView: View {
         let warranty = hasWarranty ? warrantyExpiresAt : nil
 
         let saved: Asset
-        if let asset {
-            asset.type = type
-            asset.name = name.trimmingCharacters(in: .whitespaces)
-            asset.acquiredAt = acquiredAt
-            asset.acquisitionCost = acquisitionCost ?? 0
-            asset.currentValue = value
-            asset.depreciationCurve = curveId
-            asset.warrantyExpiresAt = warranty
-            saved = asset
+        if let item {
+            item.type = type
+            item.name = name.trimmingCharacters(in: .whitespaces)
+            item.acquiredAt = acquiredAt
+            item.acquisitionCost = acquisitionCost ?? 0
+            item.currentValue = value
+            item.depreciationCurve = curveId
+            item.warrantyExpiresAt = warranty
+            item.photoData = photoData
+            saved = item
         } else {
             saved = Asset(
                 type: type,
@@ -255,7 +324,8 @@ private struct AssetFormView: View {
                 acquisitionCost: acquisitionCost ?? 0,
                 currentValue: value,
                 depreciationCurve: curveId,
-                warrantyExpiresAt: warranty
+                warrantyExpiresAt: warranty,
+                photoData: photoData
             )
             modelContext.insert(saved)
         }
@@ -275,8 +345,6 @@ private struct AssetFormView: View {
 }
 
 #Preview {
-    NavigationStack {
-        PhysicalAssetsView()
-    }
-    .modelContainer(for: PersistenceService.modelTypes, inMemory: true)
+    InventoryView()
+        .modelContainer(for: PersistenceService.modelTypes, inMemory: true)
 }

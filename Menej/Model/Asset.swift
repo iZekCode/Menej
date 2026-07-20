@@ -20,6 +20,9 @@ final class Asset {
     /// Identifier for the depreciation/appreciation curve to apply; nil means manual value only.
     var depreciationCurve: String?
     var warrantyExpiresAt: Date?
+    /// User-supplied photo (camera or library), stored outside the SQLite
+    /// store to keep row reads cheap. nil = no photo.
+    @Attribute(.externalStorage) var photoData: Data?
 
     init(
         id: UUID = UUID(),
@@ -29,7 +32,8 @@ final class Asset {
         acquisitionCost: Decimal,
         currentValue: Decimal,
         depreciationCurve: String? = nil,
-        warrantyExpiresAt: Date? = nil
+        warrantyExpiresAt: Date? = nil,
+        photoData: Data? = nil
     ) {
         self.id = id
         self.type = type
@@ -39,6 +43,7 @@ final class Asset {
         self.currentValue = currentValue
         self.depreciationCurve = depreciationCurve
         self.warrantyExpiresAt = warrantyExpiresAt
+        self.photoData = photoData
     }
 }
 

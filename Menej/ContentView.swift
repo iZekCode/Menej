@@ -25,6 +25,9 @@ struct ContentView: View {
             Tab("Portfolio", systemImage: "chart.pie") {
                 PortfolioView()
             }
+            Tab("Inventory", systemImage: "shippingbox") {
+                InventoryView()
+            }
             Tab("Insights", systemImage: "sparkles") {
                 InsightsView()
             }

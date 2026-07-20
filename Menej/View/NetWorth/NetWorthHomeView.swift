@@ -69,17 +69,7 @@ struct NetWorthHomeView: View {
                 Divider()
                 BreakdownRow(label: "Portfolio", systemImage: "chart.pie", amount: portfolioTotal)
                 Divider()
-                NavigationLink {
-                    PhysicalAssetsView()
-                } label: {
-                    BreakdownRow(
-                        label: "Physical Assets",
-                        systemImage: "briefcase",
-                        amount: physicalTotal,
-                        showsChevron: true
-                    )
-                }
-                .buttonStyle(.plain)
+                BreakdownRow(label: "Inventory", systemImage: "shippingbox", amount: physicalTotal)
             }
         }
     }
@@ -132,7 +122,6 @@ private struct BreakdownRow: View {
     let label: String
     let systemImage: String
     let amount: Decimal
-    var showsChevron: Bool = false
 
     var body: some View {
         HStack {
@@ -141,11 +130,6 @@ private struct BreakdownRow: View {
             Spacer()
             AmountText(amount: amount)
                 .font(.subheadline)
-            if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
         }
     }
 }
