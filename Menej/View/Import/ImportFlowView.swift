@@ -49,7 +49,7 @@ struct ImportFlowView: View {
             }
             .fileImporter(isPresented: $isPickerPresented, allowedContentTypes: [.pdf], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result {
-                    viewModel.importFiles(urls)
+                    viewModel.importFiles(copyIntoAppStorage(urls))
                 }
             }
             .onAppear(perform: importPendingSharedFiles)
@@ -66,6 +66,39 @@ struct ImportFlowView: View {
         let moved = SharedImportInbox.pendingFiles().compactMap(SharedImportInbox.moveIntoAppStorage)
         guard !moved.isEmpty else { return }
         viewModel.importFiles(moved)
+    }
+
+    /// `.fileImporter` hands back security-scoped URLs (Files app, iCloud
+    /// Drive, etc.) that are only guaranteed readable inside this callback.
+    /// `ImportViewModel` reads the file twice — once to parse immediately,
+    /// again to hash it whenever the user taps Confirm, arbitrarily later —
+    /// so the second read needs a URL that doesn't depend on that scope
+    /// still being open. Copying (not moving, unlike the shared-import
+    /// case) into the app's own Documents directory sidesteps that: the
+    /// original file, wherever the user picked it from, is left untouched.
+    private func copyIntoAppStorage(_ urls: [URL]) -> [URL] {
+        guard let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return []
+        }
+        let importsDirectory = documentsDirectory.appendingPathComponent("PickedImports", isDirectory: true)
+
+        return urls.compactMap { url in
+            let didStartAccessing = url.startAccessingSecurityScopedResource()
+            defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
+
+            // Each file gets its own subdirectory (rather than a UUID-prefixed
+            // filename) so ImportRow can keep showing the real filename.
+            let destination = importsDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+                .appendingPathComponent(url.lastPathComponent)
+            do {
+                try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: url, to: destination)
+                return destination
+            } catch {
+                return nil
+            }
+        }
     }
 }
 
