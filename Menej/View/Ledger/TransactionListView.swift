@@ -15,6 +15,13 @@ struct TransactionListView: View {
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @State private var viewModel = LedgerViewModel()
 
+    /// `transactions` is already sorted newest-first, so grouping preserves
+    /// that order within and across days.
+    private var groupedTransactions: [(day: Date, transactions: [Transaction])] {
+        let groups = Dictionary(grouping: transactions) { Calendar.current.startOfDay(for: $0.date) }
+        return groups.keys.sorted(by: >).map { ($0, groups[$0]!) }
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -39,11 +46,15 @@ struct TransactionListView: View {
                         message: "Import a statement to see your transactions here."
                     )
                 } else {
-                    ForEach(transactions) { transaction in
-                        NavigationLink {
-                            TransactionDetailView(transaction: transaction)
-                        } label: {
-                            TransactionRow(transaction: transaction)
+                    ForEach(groupedTransactions, id: \.day) { group in
+                        Section(sectionTitle(for: group.day)) {
+                            ForEach(group.transactions) { transaction in
+                                NavigationLink {
+                                    TransactionDetailView(transaction: transaction)
+                                } label: {
+                                    TransactionRow(transaction: transaction)
+                                }
+                            }
                         }
                     }
                 }
@@ -78,6 +89,13 @@ struct TransactionListView: View {
                 Text(viewModel.enhancementError ?? "")
             }
         }
+    }
+
+    private func sectionTitle(for day: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .long
+        formatter.doesRelativeDateFormatting = true
+        return formatter.string(from: day)
     }
 }
 

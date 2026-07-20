@@ -10,14 +10,17 @@ import SwiftUI
 import SwiftData
 
 struct TransactionDetailView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var allTransactions: [Transaction]
     @Bindable var transaction: Transaction
-    @State private var viewModel = LedgerViewModel()
+    @State private var isEditing = false
 
     var body: some View {
         List {
             Section {
+                if let merchant = transaction.merchant {
+                    LabeledContent("Title") {
+                        Text(merchant)
+                    }
+                }
                 LabeledContent("Amount") {
                     AmountText(amount: transaction.signedAmount, showSign: true)
                 }
@@ -27,21 +30,11 @@ struct TransactionDetailView: View {
                 LabeledContent("Description") {
                     Text(transaction.rawDescription)
                 }
-            }
-
-            Section("Category") {
-                Picker("Category", selection: Binding(
-                    get: { transaction.categoryId ?? .other },
-                    set: { newValue in
-                        viewModel.correctCategory(for: transaction, to: newValue, allTransactions: allTransactions)
-                        try? modelContext.save()
-                    }
-                )) {
-                    ForEach(Category.allCases) { category in
-                        Text(category.displayName).tag(category)
+                if let category = transaction.categoryId {
+                    LabeledContent("Category") {
+                        CategoryChip(category: category)
                     }
                 }
-                .pickerStyle(.menu)
             }
 
             if transaction.isTransfer {
@@ -59,6 +52,89 @@ struct TransactionDetailView: View {
             }
         }
         .navigationTitle("Transaction")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Edit") { isEditing = true }
+            }
+        }
+        .sheet(isPresented: $isEditing) {
+            TransactionEditView(transaction: transaction)
+        }
+    }
+}
+
+/// Edits title (merchant), amount, date, and description. Direction
+/// (debit/credit) and account aren't editable here — see PRD §12 Open
+/// Question 2, which only scopes edits to the parsed field values.
+private struct TransactionEditView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @Query private var allTransactions: [Transaction]
+    @Bindable var transaction: Transaction
+    @State private var viewModel = LedgerViewModel()
+
+    @State private var title = ""
+    @State private var amount: Decimal?
+    @State private var date = Date()
+    @State private var description = ""
+    @State private var category: Category = .other
+
+    private var canSave: Bool {
+        (amount ?? 0) > 0 && !description.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Title", text: $title)
+                TextField("Amount", value: $amount, format: .number)
+                    .keyboardType(.decimalPad)
+                DatePicker("Date", selection: $date, displayedComponents: .date)
+                TextField("Description", text: $description, axis: .vertical)
+                Picker("Category", selection: $category) {
+                    ForEach(Category.allCases) { category in
+                        Text(category.displayName).tag(category)
+                    }
+                }
+            }
+            .navigationTitle("Edit Transaction")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(!canSave)
+                }
+            }
+            .onAppear(perform: populateFromExisting)
+        }
+    }
+
+    private func populateFromExisting() {
+        title = transaction.merchant ?? ""
+        amount = transaction.amount
+        date = transaction.date
+        description = transaction.rawDescription
+        category = transaction.categoryId ?? .other
+    }
+
+    private func save() {
+        // Uses the pre-edit merchant to propagate the category correction,
+        // same as the retroactive matching in `correctCategory` itself.
+        if category != transaction.categoryId {
+            viewModel.correctCategory(for: transaction, to: category, allTransactions: allTransactions)
+        }
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
+        transaction.merchant = trimmedTitle.isEmpty ? nil : trimmedTitle
+        transaction.amount = amount ?? transaction.amount
+        transaction.date = date
+        transaction.rawDescription = description.trimmingCharacters(in: .whitespaces)
+        transaction.isEdited = true
+        try? modelContext.save()
+        dismiss()
     }
 }
 
