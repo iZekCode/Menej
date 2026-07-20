@@ -2,15 +2,18 @@
 //  PortfolioView.swift
 //  Menej
 //
-//  See PRD §6 F6. Shows unrealized P/L and allocation weights.
+//  See PRD §6 F6. Manual holding entry (quantity + cost basis), prices
+//  refreshed from public sources, unrealized P/L and allocation weights.
 //
 
 import SwiftUI
 import SwiftData
 
 struct PortfolioView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query private var holdings: [Holding]
     @State private var viewModel = PortfolioViewModel()
+    @State private var isAddingHolding = false
 
     var body: some View {
         NavigationStack {
@@ -22,16 +25,77 @@ struct PortfolioView: View {
                         message: "Add crypto, stocks, mutual funds, time deposits, or gold to track your portfolio."
                     )
                 } else {
-                    ForEach(viewModel.holdingDisplays) { display in
-                        HoldingRow(display: display)
-                    }
+                    summarySection
+                    holdingsSection
                 }
             }
             .navigationTitle("Portfolio")
-            .task {
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Add Holding", systemImage: "plus") {
+                        isAddingHolding = true
+                    }
+                }
+            }
+            .sheet(isPresented: $isAddingHolding) {
+                AddHoldingView()
+            }
+            .refreshable {
+                await viewModel.refresh(holdings: holdings)
+            }
+            // `id: holdings.count` re-runs the refresh when a holding is
+            // added or deleted, not just on first appearance.
+            .task(id: holdings.count) {
                 await viewModel.refresh(holdings: holdings)
             }
         }
+    }
+
+    private var summarySection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Total Value")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                AmountText(amount: viewModel.totalValue)
+                    .font(.title2.weight(.semibold))
+                if let lastRefreshedAt = viewModel.lastRefreshedAt {
+                    Text("Prices as of \(lastRefreshedAt, style: .time)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+
+            if !viewModel.failedSymbols.isEmpty {
+                Label(
+                    "No quote for \(viewModel.failedSymbols.joined(separator: ", ")) — showing last known values.",
+                    systemImage: "wifi.exclamationmark"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var holdingsSection: some View {
+        Section {
+            ForEach(viewModel.holdingDisplays) { display in
+                HoldingRow(display: display)
+            }
+            .onDelete(perform: deleteHoldings)
+        }
+    }
+
+    private func deleteHoldings(at offsets: IndexSet) {
+        let deleted = offsets.map { viewModel.holdingDisplays[$0] }
+        for display in deleted {
+            modelContext.delete(display.holding)
+        }
+        // Drop the rows now rather than waiting for the async refresh —
+        // a HoldingRow rendering a deleted @Model faults.
+        let deletedIds = Set(deleted.map(\.id))
+        viewModel.holdingDisplays.removeAll { deletedIds.contains($0.id) }
     }
 }
 
@@ -40,19 +104,147 @@ private struct HoldingRow: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(display.holding.symbol)
-                Text("\(display.allocationWeight * 100, specifier: "%.1f")% of portfolio")
+                Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            VStack(alignment: .trailing) {
+            VStack(alignment: .trailing, spacing: 2) {
                 AmountText(amount: display.currentValue)
-                AmountText(amount: display.unrealizedPL, showSign: true)
-                    .font(.caption)
+                if let unrealizedPL = display.unrealizedPL {
+                    AmountText(amount: unrealizedPL, showSign: true)
+                        .font(.caption)
+                } else if display.isStale {
+                    Text("last known")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
+    }
+
+    private var subtitle: String {
+        let weight = (display.allocationWeight * 100).formatted(.number.precision(.fractionLength(1)))
+        return "\(display.holding.instrument.displayName) · \(weight)% of portfolio"
+    }
+}
+
+private struct AddHoldingView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var instrument: AssetType = .stock
+    @State private var symbol = ""
+    @State private var quantity: Decimal?
+    @State private var avgCost: Decimal?
+    @State private var currency = "IDR"
+    @State private var manualPrice: Decimal?
+
+    private static let portfolioInstruments = AssetType.allCases.filter(\.isPortfolio)
+
+    private var needsManualPrice: Bool {
+        instrument == .mutualFund || instrument == .timeDeposit
+    }
+
+    private var canSave: Bool {
+        !symbol.trimmingCharacters(in: .whitespaces).isEmpty
+            && (quantity ?? 0) > 0
+            && (avgCost ?? 0) > 0
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Instrument", selection: $instrument) {
+                        ForEach(Self.portfolioInstruments) { type in
+                            Text(type.displayName).tag(type)
+                        }
+                    }
+                    TextField(symbolPrompt, text: $symbol)
+                        .textInputAutocapitalization(instrument == .crypto || instrument == .stock ? .characters : .words)
+                        .autocorrectionDisabled()
+                }
+
+                Section {
+                    TextField(quantityPrompt, value: $quantity, format: .number)
+                        .keyboardType(.decimalPad)
+                    TextField("Average cost per unit", value: $avgCost, format: .number)
+                        .keyboardType(.decimalPad)
+                    Picker("Currency", selection: $currency) {
+                        Text("IDR").tag("IDR")
+                        Text("USD").tag("USD")
+                    }
+                } footer: {
+                    Text(costFooter)
+                }
+
+                if needsManualPrice {
+                    Section {
+                        TextField("Current value per unit (optional)", value: $manualPrice, format: .number)
+                            .keyboardType(.decimalPad)
+                    } footer: {
+                        Text("\(instrument.displayName)s have no public price feed — update this yourself now and then. Left empty, the position is valued at cost.")
+                    }
+                }
+            }
+            .navigationTitle("Add Holding")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { save() }
+                        .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private var symbolPrompt: String {
+        switch instrument {
+        case .crypto: return "Symbol (BTC, ETH…)"
+        case .stock: return "Ticker (BBCA, AAPL…)"
+        case .gold: return "Name (Antam 10g…)"
+        default: return "Name"
+        }
+    }
+
+    private var quantityPrompt: String {
+        switch instrument {
+        case .gold: return "Grams"
+        case .timeDeposit: return "Quantity (1 for a single deposit)"
+        default: return "Quantity"
+        }
+    }
+
+    private var costFooter: String {
+        switch instrument {
+        case .stock:
+            return "IDR tickers are looked up on IDX, USD tickers on US exchanges."
+        case .gold:
+            return "Priced per gram from the global gold price."
+        case .timeDeposit:
+            return "Enter quantity 1 and the principal as average cost."
+        default:
+            return "Cost basis is used for unrealized P/L."
+        }
+    }
+
+    private func save() {
+        let holding = Holding(
+            instrument: instrument,
+            symbol: symbol.trimmingCharacters(in: .whitespaces),
+            quantity: quantity ?? 0,
+            avgCost: avgCost ?? 0,
+            currency: currency,
+            manualPrice: needsManualPrice ? manualPrice : nil
+        )
+        modelContext.insert(holding)
+        dismiss()
     }
 }
 

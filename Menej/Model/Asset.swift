@@ -41,3 +41,23 @@ final class Asset {
         self.warrantyExpiresAt = warrantyExpiresAt
     }
 }
+
+extension Asset {
+    /// Re-applies the depreciation/appreciation curve into `currentValue`.
+    /// `currentValue` stays the single stored source of truth that
+    /// NetWorthService and monthly snapshots read synchronously; this just
+    /// keeps it current for curve-managed assets (no-op for manual ones,
+    /// and never writes an unchanged value — SwiftData change tracking
+    /// would otherwise see every read path as a mutation).
+    func applyCurveIfNeeded(service: DepreciationServiceProtocol = DepreciationService(), asOf: Date = .now) {
+        guard let curveId = depreciationCurve,
+              let estimated = service.estimatedValue(
+                  acquisitionCost: acquisitionCost,
+                  acquiredAt: acquiredAt,
+                  curveId: curveId,
+                  asOf: asOf
+              ),
+              estimated != currentValue else { return }
+        currentValue = estimated
+    }
+}

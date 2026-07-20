@@ -28,6 +28,23 @@ enum AssetType: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var displayName: String {
+        switch self {
+        case .bankAccount: return "Bank Account"
+        case .eWallet: return "E-Wallet"
+        case .cash: return "Cash"
+        case .crypto: return "Crypto"
+        case .stock: return "Stock"
+        case .mutualFund: return "Mutual Fund"
+        case .timeDeposit: return "Time Deposit"
+        case .gold: return "Gold"
+        case .electronics: return "Electronics"
+        case .vehicle: return "Vehicle"
+        case .watch: return "Watch"
+        case .jewelry: return "Jewelry"
+        }
+    }
+
     var isPhysical: Bool {
         switch self {
         case .electronics, .vehicle, .watch, .jewelry: return true

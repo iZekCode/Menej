@@ -242,8 +242,25 @@ final class ImportViewModel {
         let existingSnapshots = try modelContext.fetch(FetchDescriptor<NetWorthSnapshot>())
         guard !snapshotService.hasSnapshot(forMonthOf: periodEnd, in: existingSnapshots) else { return }
 
+        // All asset classes, not just account balances (PRD §6 F5) — the
+        // same arithmetic NetWorthHomeView shows, so a snapshot never
+        // disagrees with the headline the user just saw. Holdings are
+        // valued from their last persisted quote (`offlineValueIDR`);
+        // snapshot creation must stay synchronous and offline-safe, so it
+        // never fetches prices itself.
         let allAccounts = try modelContext.fetch(FetchDescriptor<Account>())
-        let totalAssets = allAccounts.reduce(Decimal(0)) { $0 + $1.balance }
+        let allAssets = try modelContext.fetch(FetchDescriptor<Asset>())
+        let allHoldings = try modelContext.fetch(FetchDescriptor<Holding>())
+        for asset in allAssets {
+            asset.applyCurveIfNeeded()
+        }
+        let holdingValues = Dictionary(uniqueKeysWithValues: allHoldings.map { ($0.id, $0.offlineValueIDR) })
+        let totalAssets = NetWorthService().totalAssets(
+            accounts: allAccounts,
+            assets: allAssets,
+            holdings: allHoldings,
+            holdingValues: holdingValues
+        )
         let snapshot = snapshotService.makeSnapshot(date: periodEnd, totalAssets: totalAssets, totalLiabilities: 0)
         modelContext.insert(snapshot)
     }
