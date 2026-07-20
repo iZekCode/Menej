@@ -22,7 +22,7 @@ struct PortfolioView: View {
                     EmptyStateView(
                         systemImage: "chart.pie",
                         title: "No holdings yet",
-                        message: "Add crypto, stocks, mutual funds, time deposits, or gold to track your portfolio."
+                        message: "Add crypto or stocks to track your portfolio."
                     )
                 } else {
                     summarySection
@@ -140,13 +140,8 @@ private struct AddHoldingView: View {
     @State private var quantity: Decimal?
     @State private var avgCost: Decimal?
     @State private var currency = "IDR"
-    @State private var manualPrice: Decimal?
 
-    private static let portfolioInstruments = AssetType.allCases.filter(\.isPortfolio)
-
-    private var needsManualPrice: Bool {
-        instrument == .mutualFund || instrument == .timeDeposit
-    }
+    private static let portfolioInstruments: [AssetType] = [.crypto, .stock]
 
     private var canSave: Bool {
         !symbol.trimmingCharacters(in: .whitespaces).isEmpty
@@ -164,12 +159,12 @@ private struct AddHoldingView: View {
                         }
                     }
                     TextField(symbolPrompt, text: $symbol)
-                        .textInputAutocapitalization(instrument == .crypto || instrument == .stock ? .characters : .words)
+                        .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                 }
 
                 Section {
-                    TextField(quantityPrompt, value: $quantity, format: .number)
+                    TextField("Quantity", value: $quantity, format: .number)
                         .keyboardType(.decimalPad)
                     TextField("Average cost per unit", value: $avgCost, format: .number)
                         .keyboardType(.decimalPad)
@@ -179,15 +174,6 @@ private struct AddHoldingView: View {
                     }
                 } footer: {
                     Text(costFooter)
-                }
-
-                if needsManualPrice {
-                    Section {
-                        TextField("Current value per unit (optional)", value: $manualPrice, format: .number)
-                            .keyboardType(.decimalPad)
-                    } footer: {
-                        Text("\(instrument.displayName)s have no public price feed — update this yourself now and then. Left empty, the position is valued at cost.")
-                    }
                 }
             }
             .navigationTitle("Add Holding")
@@ -205,33 +191,13 @@ private struct AddHoldingView: View {
     }
 
     private var symbolPrompt: String {
-        switch instrument {
-        case .crypto: return "Symbol (BTC, ETH…)"
-        case .stock: return "Ticker (BBCA, AAPL…)"
-        case .gold: return "Name (Antam 10g…)"
-        default: return "Name"
-        }
-    }
-
-    private var quantityPrompt: String {
-        switch instrument {
-        case .gold: return "Grams"
-        case .timeDeposit: return "Quantity (1 for a single deposit)"
-        default: return "Quantity"
-        }
+        instrument == .crypto ? "Symbol (BTC, ETH…)" : "Ticker (BBCA, AAPL…)"
     }
 
     private var costFooter: String {
-        switch instrument {
-        case .stock:
-            return "IDR tickers are looked up on IDX, USD tickers on US exchanges."
-        case .gold:
-            return "Priced per gram from the global gold price."
-        case .timeDeposit:
-            return "Enter quantity 1 and the principal as average cost."
-        default:
-            return "Cost basis is used for unrealized P/L."
-        }
+        instrument == .stock
+            ? "IDR tickers are looked up on IDX, USD tickers on US exchanges."
+            : "Cost basis is used for unrealized P/L."
     }
 
     private func save() {
@@ -240,8 +206,7 @@ private struct AddHoldingView: View {
             symbol: symbol.trimmingCharacters(in: .whitespaces),
             quantity: quantity ?? 0,
             avgCost: avgCost ?? 0,
-            currency: currency,
-            manualPrice: needsManualPrice ? manualPrice : nil
+            currency: currency
         )
         modelContext.insert(holding)
         dismiss()
