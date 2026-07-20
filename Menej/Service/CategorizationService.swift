@@ -145,17 +145,17 @@ final class CategorizationService: CategorizationServiceProtocol {
         for (merchant, category) in userCorrections where lowered.contains(merchant.lowercased()) {
             return (merchant, category)
         }
+        // Every Grab statement transaction is either a GrabFood order or a
+        // ride — decided by the parser's structured description alone,
+        // BEFORE the dictionary and keyword layers: a ride's
+        // pickup/destination is an address, and an address like "Apple
+        // Developer Academy" or "Hariston Hotel & Suites" must not drag the
+        // ride into another category via a keyword match.
+        if issuer == .grab {
+            return lowered.contains("grabfood") ? ("GrabFood", .food) : ("Grab", .transport)
+        }
         for rule in bundledRules where lowered.contains(rule.keyword) {
             return (rule.merchant, rule.category)
-        }
-        // Every Grab statement transaction is either a ride or a GrabFood
-        // order — GrabFood already matched above via the bundled dictionary
-        // ("grabfood"), so anything left from this issuer is a ride. Checked
-        // BEFORE the generic keyword layers: a ride's pickup/destination is
-        // an address, and an address like "Hariston Hotel & Suites" must not
-        // drag the ride into the entertainment category.
-        if issuer == .grab {
-            return ("Grab", .transport)
         }
         for (keywords, category) in Self.keywordLayers where keywords.contains(where: lowered.contains) {
             return (nil, category)

@@ -129,9 +129,119 @@ struct TransactionNormalizer: TransactionNormalizing {
             amount: amount,
             direction: direction,
             rawDescription: description,
-            merchant: nil,
+            merchant: bcaTitle(description: description, amount: amount),
             confidence: confidence
         )
+    }
+
+    // MARK: myBCA display titles
+    //
+    // Per explicit user spec: "TRSF E-BANKING"/"TRANSAKSI DEBIT" rows must
+    // be titled by the counterparty/merchant name alone, not the full
+    // banking jargon; and the recurring BI-FAST transfer (to "022 0T01/19")
+    // is the user's electricity & water bill — including IPL (apartment
+    // maintenance) whenever it's above Rp 1,000,000.
+
+    private static func bcaTitle(description: String, amount: Decimal) -> String? {
+        let upper = description.uppercased()
+        if upper.contains("BI-FAST"), upper.contains("TRANSFER"), !upper.contains("BIAYA") {
+            return amount > 1_000_000 ? "Electricity, Water & IPL" : "Electricity & Water"
+        }
+        // Two more user-identified recurring flows (like BI-FAST above,
+        // these encode this user's own statement knowledge):
+        // the NETCITI virtual account is the home wifi, and an FTSCY
+        // transfer to the account holder's own name is a top-up of their
+        // Stockbit RDN (brokerage cash account) — an investment, not a
+        // plain transfer (categorized via MerchantDictionary.json).
+        if upper.contains("NETCITI") {
+            return "Netciti (WiFi)"
+        }
+        if upper.contains("FTSCY"), upper.contains("FILBERT NALDO") {
+            return "Stockbit RDN Top Up"
+        }
+        if upper.contains("TRANSAKSI DEBIT") || upper.contains("TRANSAKSIDEBIT") || upper.contains("DEBIT DOM") {
+            return bcaCardMerchant(from: description)
+        }
+        if upper.contains("TRSF E-BANKING") {
+            return bcaCounterpartyName(from: description)
+        }
+        return nil
+    }
+
+    /// Card/QRIS rows glue the merchant straight onto a zero filler whose
+    /// "00" OCR sometimes reads as letter O ("00000.00PMX KANTIN",
+    /// "00000.O0AEON STORE"). The merchant is whatever follows the filler;
+    /// rows without one ("DB DEBIT DOMESTIK TRN DEBIT DOM 008 AEON STORE")
+    /// fall back to the tokens after the last digit-bearing token.
+    private static let bcaCardFiller = try! NSRegularExpression(pattern: #"0{3,}[.,][0O]{2}"#)
+
+    private static func bcaCardMerchant(from description: String) -> String? {
+        let range = NSRange(description.startIndex..., in: description)
+        if let match = bcaCardFiller.firstMatch(in: description, range: range),
+           let matchRange = Range(match.range, in: description) {
+            let tail = String(description[matchRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+            return tail.isEmpty ? nil : tail
+        }
+        let tokens = description.split(separator: " ").map(String.init)
+        guard let lastDigitIndex = tokens.lastIndex(where: { $0.rangeOfCharacter(from: .decimalDigits) != nil }) else {
+            return nil
+        }
+        let tail = tokens[(lastDigitIndex + 1)...].joined(separator: " ")
+        return tail.isEmpty ? nil : tail
+    }
+
+    private static let bcaJargonTokens: Set<String> = ["TRSF", "E-BANKING", "DB", "CR", "SMEMFTS", "BIF", "KE"]
+
+    /// The counterparty in a transfer row. Two shapes exist in real
+    /// statements:
+    /// - virtual-account payments carry a "NNNNN/PROVIDER" token
+    ///   ("70001/GOPAY TOPUP 0895…" → "GOPAY TOPUP");
+    /// - person transfers end with the recipient's name in UPPERCASE,
+    ///   preceded by the user's own lowercase note ("50000.00 dpayce
+    ///   filbert CAROLINE ANG" → "CAROLINE ANG") and sometimes followed by
+    ///   trailing reference numbers, which are skipped.
+    private static func bcaCounterpartyName(from description: String) -> String? {
+        let tokens = description.split(separator: " ").map(String.init)
+
+        // Virtual-account shape. The last matching token wins because the
+        // leading reference ("1004/FTFVA/WS95031") matches the same digit-
+        // slash shape; its capture still contains "/" and is rejected. The
+        // capture must also contain a letter, so a date fragment like
+        // "03/02" can't be mistaken for a provider.
+        if let providerIndex = tokens.lastIndex(where: { token in
+            guard let slash = token.firstIndex(of: "/"), token.prefix(upTo: slash).allSatisfy(\.isNumber),
+                  slash != token.startIndex, token.index(after: slash) != token.endIndex else { return false }
+            let capture = token[token.index(after: slash)...]
+            return !capture.contains("/") && capture.contains(where: \.isLetter)
+        }) {
+            let provider = String(tokens[providerIndex].drop { $0 != "/" }.dropFirst())
+            var words = [provider]
+            for token in tokens[(providerIndex + 1)...] {
+                guard token != ":", token.rangeOfCharacter(from: .decimalDigits) == nil,
+                      token.rangeOfCharacter(from: .letters) != nil else { break }
+                words.append(token)
+            }
+            return words.joined(separator: " ")
+        }
+
+        // Person shape: the trailing run of all-caps, digit-free tokens,
+        // skipping any reference junk after it. Lowercase/mixed-case note
+        // words terminate the run so the title stays "only the name".
+        var name: [String] = []
+        for token in tokens.reversed() {
+            let isNameToken = token == token.uppercased()
+                && token.rangeOfCharacter(from: .decimalDigits) == nil
+                && token.rangeOfCharacter(from: .letters) != nil
+                && !Self.bcaJargonTokens.contains(token)
+            if isNameToken {
+                name.insert(token, at: 0)
+            } else if name.isEmpty {
+                continue
+            } else {
+                break
+            }
+        }
+        return name.isEmpty ? nil : name.joined(separator: " ")
     }
 
     /// Direction marker ("DB"/"CR") is usually on the amount line itself,

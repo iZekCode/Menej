@@ -110,8 +110,9 @@ struct AIEnhancementService: AIEnhancementServiceProtocol {
     "Green Office Park 9 BSD" or "Silkwood Residences", at a 15,000–60,000 fare), parking, fuel, tolls, trains.
     - bills: pulsa and mobile data (IM3, Telkomsel), GoTagihan, electricity, internet (Netciti, IndiHome), \
     laundry (Wash Xpress), subscriptions, admin fees, transfer fees, taxes (PAJAK).
-    - transfer: e-wallet/e-money top-ups (GoPay, OVO, ShopeePay, Flazz), virtual-account payments, and \
-    transfers between the user's own accounts (the account holder's own name as counterparty).
+    - transfer: e-wallet/e-money top-ups (GoPay, OVO, ShopeePay, Flazz) and virtual-account payments.
+    - investment: Stockbit and other brokerages — an outgoing bank transfer whose counterparty is the \
+    account holder's OWN name is this user's Stockbit RDN top-up (merchant "Stockbit RDN Top Up").
     - income: money received — salary, transfers in from other people, reimbursements, refunds, \
     bank interest (BUNGA).
     - shopping: marketplaces (Shopee, Tokopedia), department and retail stores (AEON, Uniqlo).
@@ -126,9 +127,13 @@ struct AIEnhancementService: AIEnhancementServiceProtocol {
     - "TRSF E-BANKING DB 1004/FTFVA/WS95031 70001/GOPAY TOPUP 0895637512739", money out → merchant "GoPay Top Up", transfer
     - "TRSF E-BANKING CR 0306/FTSCY/WS95031 7000000.00 LEDYAWATY", money in → merchant "Ledyawaty", income
     - "TRANSAKSI DEBIT TGL: 22/04 QR 008 00000.00AEON STORE", money out → merchant "AEON Store", shopping
-    - "BI-FAST DB BIF TRANSFER KE 022 0T01/19", money out → merchant "Bank Transfer", transfer
+    - "BI-FAST DB BIF TRANSFER KE 022 0T01/19", money out → this user's recurring utility payment → \
+    merchant "Electricity & Water" (call it "Electricity, Water & IPL" when the amount exceeds IDR 1,000,000), bills
     - "Ditransfer ke Roy Harianja 0420260622072354Vxgp UJMeQPID", money out → merchant "Roy Harianja", transfer
     - "BYR VIA E-BANKING 30/06 WSID9503103 0404 UNIV. BINUS 270223569622", money out → merchant "BINUS University", education
+    - "TRSF E-BANKING DB 2404/FTSCY/WS95031 20000000.00 FILBERT NALDO WIJA", money out → the account \
+    holder paying their own name → merchant "Stockbit RDN Top Up", investment
+    - "TRSF E-BANKING DB 3004/FTFVA/WS95031 00595/NETCITI PERS D9H105672", money out → merchant "Netciti (WiFi)", bills
     """
 
     func enhance(rawDescription: String, amount: Decimal, direction: Direction, issuer: Issuer?) async throws -> (merchant: String, category: Category) {
