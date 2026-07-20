@@ -127,8 +127,9 @@ enum OCRRowExtractor {
             let amountText = bucket.first { $0.x > 0.85 && matches(grabAmountLine, $0.text) }?.text ?? ""
 
             guard !amountText.isEmpty else { continue }
+            let (description, title) = grabDescriptionAndTitle(from: bucket)
             rows.append(RawTransactionRow(
-                rawLines: [dateText, timeText, amountText, grabDescription(from: bucket)],
+                rawLines: [dateText, timeText, amountText, description, title],
                 sourceLineNumber: sourceLineNumber
             ))
         }
@@ -143,7 +144,13 @@ enum OCRRowExtractor {
     /// and yields a description both the categorizer and the on-device LLM
     /// can actually read: "GrabFood: Moon Chicken - AlamSutera → Silkwood
     /// Residences (A-98QWXJ8WX4BDAV)".
-    private static func grabDescription(from bucket: [Item]) -> String {
+    ///
+    /// The title becomes the transaction's merchant (the ledger's display
+    /// name), per the service type: for GrabFood the pickup column holds the
+    /// restaurant ("Es Teler Sinar Garut - Panunggangan Utara" → "Es Teler
+    /// Sinar Garut"); for rides the interesting part is where the user went,
+    /// i.e. the destination column.
+    private static func grabDescriptionAndTitle(from bucket: [Item]) -> (description: String, title: String) {
         // "IDR" is the currency column, not part of any text column — but in
         // some months' layout it renders left enough to land inside the
         // service-type column's X range, so it's dropped by name.
@@ -164,7 +171,22 @@ enum OCRRowExtractor {
         if !pickup.isEmpty { parts.append(pickup) }
         if !destination.isEmpty { parts.append("→ \(destination)") }
         if !booking.isEmpty { parts.append("(\(booking))") }
-        return parts.joined(separator: " ")
+
+        let title: String
+        if serviceType.localizedCaseInsensitiveContains("grabfood") {
+            // Grab names restaurants "Name - Area"; the area suffix is noise
+            // for a title. Split on the last " - " only (names themselves can
+            // contain dashes, and OCR sometimes loses the surrounding spaces
+            // — in that case the full name is kept).
+            if let separator = pickup.range(of: " - ", options: .backwards) {
+                title = String(pickup[..<separator.lowerBound])
+            } else {
+                title = pickup
+            }
+        } else {
+            title = destination
+        }
+        return (parts.joined(separator: " "), title)
     }
 
     // MARK: - myBCA

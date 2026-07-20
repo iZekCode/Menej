@@ -99,8 +99,9 @@ struct AIEnhancementService: AIEnhancementServiceProtocol {
     - myBCA card/QRIS: "TRANSAKSI DEBIT TGL: 09/04 QR 912 00000.00PMX KANTIN" — the merchant is glued \
     after the "00000.00" filler and may be truncated. Merchant "PMX Kantin", category food.
     - Grab: "Car Standard: Green Office Park 9 → Lobby Oak Apartment (A-99HTHGQWWCQTAV)" is a ride → \
-    merchant "Grab", category transport. "GrabFood: Moon Chicken - AlamSutera → Silkwood Residences (A-…)" \
-    is food delivery → merchant is the restaurant, "Moon Chicken", category food.
+    the merchant is the destination (the part after "→"), "Lobby Oak Apartment", category transport. \
+    "GrabFood: Moon Chicken - AlamSutera → Silkwood Residences (A-…)" is food delivery → merchant is \
+    the restaurant without its area suffix, "Moon Chicken", category food.
 
     Category rules (Indonesian context):
     - food: restaurants, warung/warkop/kantin, ayam/bakso/nasi/sate/martabak and similar dishes, \
