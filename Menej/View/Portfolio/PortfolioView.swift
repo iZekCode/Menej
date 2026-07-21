@@ -11,6 +11,7 @@ import SwiftData
 
 struct PortfolioView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppState.self) private var appState
     @Query private var holdings: [Holding]
     @State private var viewModel = PortfolioViewModel()
     @State private var isAddingHolding = false
@@ -57,8 +58,18 @@ struct PortfolioView: View {
                 Text("Total Value")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                AmountText(amount: viewModel.totalValue)
-                    .font(.title2.weight(.semibold))
+                HStack(spacing: AppSpacing.grid) {
+                    AmountText(amount: viewModel.totalValue, isHidden: appState.areAmountsHidden)
+                        .font(.title2.weight(.semibold))
+                    Button {
+                        appState.areAmountsHidden.toggle()
+                    } label: {
+                        Image(systemName: appState.areAmountsHidden ? "eye.slash" : "eye")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(appState.areAmountsHidden ? "Show amounts" : "Hide amounts")
+                }
                 if let lastRefreshedAt = viewModel.lastRefreshedAt {
                     Text("Prices as of \(lastRefreshedAt, style: .time)")
                         .font(.caption)
@@ -81,7 +92,7 @@ struct PortfolioView: View {
     private var holdingsSection: some View {
         Section {
             ForEach(viewModel.holdingDisplays) { display in
-                HoldingRow(display: display)
+                HoldingRow(display: display, isHidden: appState.areAmountsHidden)
             }
             .onDelete(perform: deleteHoldings)
         }
@@ -101,6 +112,7 @@ struct PortfolioView: View {
 
 private struct HoldingRow: View {
     let display: HoldingDisplay
+    var isHidden: Bool = false
 
     var body: some View {
         HStack {
@@ -112,9 +124,9 @@ private struct HoldingRow: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                AmountText(amount: display.currentValue)
+                AmountText(amount: display.currentValue, isHidden: isHidden)
                 if let unrealizedPL = display.unrealizedPL {
-                    AmountText(amount: unrealizedPL, showSign: true)
+                    AmountText(amount: unrealizedPL, showSign: true, isHidden: isHidden)
                         .font(.caption)
                 } else if display.isStale {
                     Text("last known")
@@ -217,5 +229,6 @@ private struct AddHoldingView: View {
     NavigationStack {
         PortfolioView()
     }
+    .environment(AppState())
     .modelContainer(for: PersistenceService.modelTypes, inMemory: true)
 }

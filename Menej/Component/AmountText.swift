@@ -13,13 +13,25 @@ struct AmountText: View {
     let amount: Decimal
     var currencyCode: String = "IDR"
     var showSign: Bool = false
+    /// Opt-in masking — off by default so most screens are unaffected. The
+    /// net-worth cluster (Net Worth, Portfolio, Inventory) passes the
+    /// AppState flag through so its "hide amounts" eye can redact figures.
+    var isHidden: Bool = false
 
     private var isNegative: Bool { amount < 0 }
 
     var body: some View {
-        Text(formatted)
-            .numericStyle()
-            .foregroundStyle(showSign ? (isNegative ? AppColor.loss : AppColor.gain) : .primary)
+        if isHidden {
+            // Neutral color when masked — the gain/loss tint would otherwise
+            // leak the sign the dots are meant to hide.
+            Text(verbatim: "••••••")
+                .numericStyle()
+                .foregroundStyle(.primary)
+        } else {
+            Text(formatted)
+                .numericStyle()
+                .foregroundStyle(showSign ? (isNegative ? AppColor.loss : AppColor.gain) : .primary)
+        }
     }
 
     private var formatted: String {

@@ -15,6 +15,7 @@ struct NetWorthHomeView: View {
     @Query private var liabilities: [Liability]
     @Query(sort: \NetWorthSnapshot.date) private var snapshots: [NetWorthSnapshot]
 
+    @Environment(AppState.self) private var appState
     @State private var viewModel = NetWorthViewModel()
 
     var body: some View {
@@ -25,9 +26,20 @@ struct NetWorthHomeView: View {
                         Text("Total Assets")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Text(headlineAmount)
-                            .font(AppTypography.netWorthHeadline)
-                        if let delta = monthlyDelta {
+                        HStack(spacing: AppSpacing.grid) {
+                            Text(appState.areAmountsHidden ? "••••••" : headlineAmount)
+                                .font(AppTypography.netWorthHeadline)
+                            Button {
+                                appState.areAmountsHidden.toggle()
+                            } label: {
+                                Image(systemName: appState.areAmountsHidden ? "eye.slash" : "eye")
+                                    .font(.title3)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(appState.areAmountsHidden ? "Show amounts" : "Hide amounts")
+                        }
+                        if let delta = monthlyDelta, !appState.areAmountsHidden {
                             DeltaBadge(delta: delta)
                         }
                     }
@@ -65,21 +77,21 @@ struct NetWorthHomeView: View {
     private var breakdownCard: some View {
         SectionCard(title: "Breakdown") {
             VStack(spacing: AppSpacing.grid) {
-                BreakdownRow(label: "Liquid", systemImage: "banknote", amount: liquidTotal)
+                BreakdownRow(label: "Liquid", systemImage: "banknote", amount: liquidTotal, isHidden: appState.areAmountsHidden)
                 Divider()
                 // Portfolio and Inventory are net-worth components, not
                 // top-level tabs — drill in from their breakdown rows.
                 NavigationLink {
                     PortfolioView()
                 } label: {
-                    BreakdownRow(label: "Portfolio", systemImage: "chart.pie", amount: portfolioTotal, showsChevron: true)
+                    BreakdownRow(label: "Portfolio", systemImage: "chart.pie", amount: portfolioTotal, showsChevron: true, isHidden: appState.areAmountsHidden)
                 }
                 .buttonStyle(.plain)
                 Divider()
                 NavigationLink {
                     InventoryView()
                 } label: {
-                    BreakdownRow(label: "Inventory", systemImage: "shippingbox", amount: physicalTotal, showsChevron: true)
+                    BreakdownRow(label: "Inventory", systemImage: "shippingbox", amount: physicalTotal, showsChevron: true, isHidden: appState.areAmountsHidden)
                 }
                 .buttonStyle(.plain)
             }
@@ -135,14 +147,21 @@ private struct BreakdownRow: View {
     let systemImage: String
     let amount: Decimal
     var showsChevron: Bool = false
+    var isHidden: Bool = false
 
     var body: some View {
         HStack {
             Label(label, systemImage: systemImage)
                 .font(.subheadline)
             Spacer()
-            AmountText(amount: amount)
-                .font(.subheadline)
+            if isHidden {
+                Text(verbatim: "••••••")
+                    .font(.subheadline)
+                    .monospacedDigit()
+            } else {
+                AmountText(amount: amount)
+                    .font(.subheadline)
+            }
             if showsChevron {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
@@ -155,5 +174,6 @@ private struct BreakdownRow: View {
 
 #Preview {
     NetWorthHomeView()
+        .environment(AppState())
         .modelContainer(for: PersistenceService.modelTypes, inMemory: true)
 }

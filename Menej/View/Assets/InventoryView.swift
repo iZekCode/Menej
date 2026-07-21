@@ -13,6 +13,7 @@ import PhotosUI
 
 struct InventoryView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppState.self) private var appState
     // A `#Predicate` with several `||` enum comparisons hits a known Swift
     // compiler type-checking limit ("unable to type-check in reasonable
     // time"). Filtering in Swift after a plain fetch sidesteps it.
@@ -44,7 +45,7 @@ struct InventoryView: View {
                         Button {
                             itemBeingEdited = item
                         } label: {
-                            InventoryRow(item: item)
+                            InventoryRow(item: item, isHidden: appState.areAmountsHidden)
                         }
                         .buttonStyle(.plain)
                     }
@@ -56,6 +57,14 @@ struct InventoryView: View {
         }
         .navigationTitle("Inventory")
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    appState.areAmountsHidden.toggle()
+                } label: {
+                    Image(systemName: appState.areAmountsHidden ? "eye.slash" : "eye")
+                }
+                .accessibilityLabel(appState.areAmountsHidden ? "Show amounts" : "Hide amounts")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Add Item", systemImage: "plus") {
                     isAddingItem = true
@@ -91,6 +100,7 @@ struct InventoryView: View {
 
 private struct InventoryRow: View {
     let item: Asset
+    var isHidden: Bool = false
 
     var body: some View {
         HStack(spacing: AppSpacing.grid) {
@@ -102,7 +112,7 @@ private struct InventoryRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            AmountText(amount: item.currentValue)
+            AmountText(amount: item.currentValue, isHidden: isHidden)
         }
     }
 
@@ -362,5 +372,6 @@ private struct InventoryItemFormView: View {
     NavigationStack {
         InventoryView()
     }
+    .environment(AppState())
     .modelContainer(for: PersistenceService.modelTypes, inMemory: true)
 }
