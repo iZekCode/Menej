@@ -10,8 +10,16 @@ import SwiftUI
 import SwiftData
 
 struct TransactionDetailView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @Query private var accounts: [Account]
     @Bindable var transaction: Transaction
     @State private var isEditing = false
+    @State private var isConfirmingDelete = false
+
+    private var issuer: Issuer? {
+        accounts.first { $0.id == transaction.accountId }?.issuer
+    }
 
     var body: some View {
         List {
@@ -26,6 +34,11 @@ struct TransactionDetailView: View {
                 }
                 LabeledContent("Date") {
                     Text(transaction.date, style: .date)
+                }
+                if let issuer {
+                    LabeledContent("Source") {
+                        IssuerTag(issuer: issuer)
+                    }
                 }
                 LabeledContent("Description") {
                     Text(transaction.rawDescription)
@@ -50,6 +63,13 @@ struct TransactionDetailView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Section {
+                Button("Delete Transaction", role: .destructive) {
+                    isConfirmingDelete = true
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
         .navigationTitle("Transaction")
         .toolbar {
@@ -59,6 +79,15 @@ struct TransactionDetailView: View {
         }
         .sheet(isPresented: $isEditing) {
             TransactionEditView(transaction: transaction)
+        }
+        .alert("Delete this transaction?", isPresented: $isConfirmingDelete) {
+            Button("Delete", role: .destructive) {
+                modelContext.delete(transaction)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes it from your ledger and spending totals. It can't be undone.")
         }
     }
 }

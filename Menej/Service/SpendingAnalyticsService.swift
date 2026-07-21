@@ -46,13 +46,6 @@ struct SpendBucket: Identifiable {
     var id: Date { start }
 }
 
-struct MerchantSpend: Identifiable {
-    let merchant: String
-    let total: Decimal
-    let transactionCount: Int
-    var id: String { merchant }
-}
-
 struct CategoryDelta: Identifiable {
     let category: Category
     let current: Decimal
@@ -84,7 +77,6 @@ protocol SpendingAnalyticsServiceProtocol {
     func categoryBreakdown(entries: [AnalyticsEntry], period: AnalyticsPeriod, asOf: Date) -> [CategorySpend]
     func timeSeries(entries: [AnalyticsEntry], period: AnalyticsPeriod, asOf: Date) -> [SpendBucket]
     func comparison(entries: [AnalyticsEntry], period: AnalyticsPeriod, asOf: Date) -> PeriodComparison
-    func topMerchants(entries: [AnalyticsEntry], period: AnalyticsPeriod, asOf: Date, limit: Int) -> [MerchantSpend]
     func largestExpenses(entries: [AnalyticsEntry], period: AnalyticsPeriod, asOf: Date, limit: Int) -> [AnalyticsEntry]
     func cashflow(entries: [AnalyticsEntry], period: AnalyticsPeriod, asOf: Date) -> Cashflow
 }
@@ -218,26 +210,7 @@ struct SpendingAnalyticsService: SpendingAnalyticsServiceProtocol {
         return NSDecimalNumber(decimal: delta).doubleValue / NSDecimalNumber(decimal: baseline).doubleValue
     }
 
-    // MARK: - Merchants & largest
-
-    func topMerchants(entries: [AnalyticsEntry], period: AnalyticsPeriod, asOf: Date, limit: Int) -> [MerchantSpend] {
-        let expenses = entriesInPeriod(entries, period, asOf).filter(\.isExpense)
-        // Entries with no resolved merchant can't be ranked as a named
-        // merchant — they'd collapse into a meaningless "Unknown" bucket that
-        // often dwarfs real ones — so they're excluded from this list.
-        let named = expenses.filter { ($0.merchant?.isEmpty == false) }
-        return Dictionary(grouping: named, by: { $0.merchant! })
-            .map { merchant, group in
-                MerchantSpend(
-                    merchant: merchant,
-                    total: group.reduce(Decimal(0)) { $0 + $1.amount },
-                    transactionCount: group.count
-                )
-            }
-            .sorted { $0.total > $1.total }
-            .prefix(limit)
-            .map { $0 }
-    }
+    // MARK: - Largest
 
     func largestExpenses(entries: [AnalyticsEntry], period: AnalyticsPeriod, asOf: Date, limit: Int) -> [AnalyticsEntry] {
         entriesInPeriod(entries, period, asOf)

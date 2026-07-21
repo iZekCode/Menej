@@ -16,7 +16,7 @@ enum Issuer: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .bcaMyBCA: return "myBCA"
+        case .bcaMyBCA: return "MyBCA"
         case .gopay: return "GoPay"
         case .grab: return "Grab"
         }
