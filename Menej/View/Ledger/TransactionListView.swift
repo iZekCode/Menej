@@ -14,6 +14,7 @@ struct TransactionListView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @State private var viewModel = LedgerViewModel()
+    @State private var insights = InsightsViewModel()
 
     /// `transactions` is already sorted newest-first, so grouping preserves
     /// that order within and across days.
@@ -46,6 +47,11 @@ struct TransactionListView: View {
                         message: "Import a statement to see your transactions here."
                     )
                 } else {
+                    let summary = insights.monthSummary(transactions: transactions)
+                    if summary.total > 0 {
+                        LedgerSummaryStrip(summary: summary)
+                    }
+
                     ForEach(groupedTransactions, id: \.day) { group in
                         Section(sectionTitle(for: group.day)) {
                             ForEach(group.transactions) { transaction in
@@ -96,6 +102,35 @@ struct TransactionListView: View {
         formatter.dateStyle = .long
         formatter.doesRelativeDateFormatting = true
         return formatter.string(from: day)
+    }
+}
+
+/// Compact this-month spend recap above the ledger. Informational only — the
+/// full analytics live on the Insights tab; this just orients the reader.
+private struct LedgerSummaryStrip: View {
+    let summary: InsightsViewModel.MonthSummary
+
+    var body: some View {
+        Section {
+            VStack(alignment: .leading, spacing: AppSpacing.grid) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Spent this month")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    AmountText(amount: summary.total)
+                        .font(.title3.weight(.semibold))
+                }
+                if !summary.top.isEmpty {
+                    HStack(spacing: AppSpacing.grid) {
+                        ForEach(summary.top) { slice in
+                            CategoryChip(category: slice.category)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
     }
 }
 
