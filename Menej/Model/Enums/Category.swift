@@ -38,6 +38,21 @@ enum Category: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// True for categories that represent actual consumption — money that
+    /// has left for good. Transfers between the user's own accounts,
+    /// investment contributions, and income are movements or inflows, not
+    /// burn, so they're excluded from runway (burn rate) and from spending
+    /// anomalies (PRD §6 F8). An investment top-up shortening your displayed
+    /// runway would be wrong — the money is still yours, just reallocated.
+    var isBurnSpend: Bool {
+        switch self {
+        case .food, .transport, .shopping, .bills, .entertainment, .health, .education, .other:
+            return true
+        case .transfer, .investment, .income:
+            return false
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .food: return "fork.knife"

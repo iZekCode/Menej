@@ -160,6 +160,7 @@ private struct InventoryItemFormView: View {
     @State private var warrantyExpiresAt = Date()
     @State private var photoData: Data?
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var isShowingCamera = false
 
     private let depreciationService = DepreciationService()
     private let reminderService = WarrantyReminderService()
@@ -245,6 +246,12 @@ private struct InventoryItemFormView: View {
                     }
                 }
             }
+            .fullScreenCover(isPresented: $isShowingCamera) {
+                CameraPicker(isPresented: $isShowingCamera) { data in
+                    photoData = data
+                }
+                .ignoresSafeArea()
+            }
         }
     }
 
@@ -255,12 +262,19 @@ private struct InventoryItemFormView: View {
                 ItemThumbnail(photoData: photoData)
                     .frame(width: 64, height: 64)
                 VStack(alignment: .leading, spacing: 4) {
+                    if CameraPicker.isAvailable {
+                        Button {
+                            isShowingCamera = true
+                        } label: {
+                            Label("Take Photo", systemImage: "camera")
+                        }
+                    }
                     PhotosPicker(
                         selection: $selectedPhoto,
                         matching: .images,
                         photoLibrary: .shared()
                     ) {
-                        Label(photoData == nil ? "Add Photo" : "Change Photo", systemImage: "photo")
+                        Label(photoData == nil ? "Choose from Library" : "Change Photo", systemImage: "photo")
                     }
                     if photoData != nil {
                         Button(role: .destructive) {
