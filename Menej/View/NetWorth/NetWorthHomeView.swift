@@ -67,9 +67,21 @@ struct NetWorthHomeView: View {
             VStack(spacing: AppSpacing.grid) {
                 BreakdownRow(label: "Liquid", systemImage: "banknote", amount: liquidTotal)
                 Divider()
-                BreakdownRow(label: "Portfolio", systemImage: "chart.pie", amount: portfolioTotal)
+                // Portfolio and Inventory are net-worth components, not
+                // top-level tabs — drill in from their breakdown rows.
+                NavigationLink {
+                    PortfolioView()
+                } label: {
+                    BreakdownRow(label: "Portfolio", systemImage: "chart.pie", amount: portfolioTotal, showsChevron: true)
+                }
+                .buttonStyle(.plain)
                 Divider()
-                BreakdownRow(label: "Inventory", systemImage: "shippingbox", amount: physicalTotal)
+                NavigationLink {
+                    InventoryView()
+                } label: {
+                    BreakdownRow(label: "Inventory", systemImage: "shippingbox", amount: physicalTotal, showsChevron: true)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -122,6 +134,7 @@ private struct BreakdownRow: View {
     let label: String
     let systemImage: String
     let amount: Decimal
+    var showsChevron: Bool = false
 
     var body: some View {
         HStack {
@@ -130,7 +143,13 @@ private struct BreakdownRow: View {
             Spacer()
             AmountText(amount: amount)
                 .font(.subheadline)
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
+        .contentShape(Rectangle())
     }
 }
 

@@ -28,47 +28,47 @@ struct InventoryView: View {
             .sorted { $0.currentValue > $1.currentValue }
     }
 
+    // No NavigationStack of its own — pushed onto NetWorthHomeView's stack
+    // from the Breakdown card.
     var body: some View {
-        NavigationStack {
-            List {
-                if items.isEmpty {
-                    EmptyStateView(
-                        systemImage: "shippingbox",
-                        title: "No items yet",
-                        message: "Add electronics, vehicles, watches, or jewelry to track them and include them in your net worth."
-                    )
-                } else {
-                    Section {
-                        ForEach(items) { item in
-                            Button {
-                                itemBeingEdited = item
-                            } label: {
-                                InventoryRow(item: item)
-                            }
-                            .buttonStyle(.plain)
+        List {
+            if items.isEmpty {
+                EmptyStateView(
+                    systemImage: "shippingbox",
+                    title: "No items yet",
+                    message: "Add electronics, vehicles, watches, or jewelry to track them and include them in your net worth."
+                )
+            } else {
+                Section {
+                    ForEach(items) { item in
+                        Button {
+                            itemBeingEdited = item
+                        } label: {
+                            InventoryRow(item: item)
                         }
-                        .onDelete(perform: deleteItems)
-                    } footer: {
-                        Text("Values follow a per-category curve unless set manually. Tap an item to edit it.")
+                        .buttonStyle(.plain)
                     }
+                    .onDelete(perform: deleteItems)
+                } footer: {
+                    Text("Values follow a per-category curve unless set manually. Tap an item to edit it.")
                 }
             }
-            .navigationTitle("Inventory")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Add Item", systemImage: "plus") {
-                        isAddingItem = true
-                    }
-                }
-            }
-            .sheet(isPresented: $isAddingItem) {
-                InventoryItemFormView(item: nil)
-            }
-            .sheet(item: $itemBeingEdited) { item in
-                InventoryItemFormView(item: item)
-            }
-            .onAppear(perform: applyCurves)
         }
+        .navigationTitle("Inventory")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Add Item", systemImage: "plus") {
+                    isAddingItem = true
+                }
+            }
+        }
+        .sheet(isPresented: $isAddingItem) {
+            InventoryItemFormView(item: nil)
+        }
+        .sheet(item: $itemBeingEdited) { item in
+            InventoryItemFormView(item: item)
+        }
+        .onAppear(perform: applyCurves)
     }
 
     /// Depreciation/appreciation drifts with time, not with edits — re-apply
@@ -359,6 +359,8 @@ private struct InventoryItemFormView: View {
 }
 
 #Preview {
-    InventoryView()
-        .modelContainer(for: PersistenceService.modelTypes, inMemory: true)
+    NavigationStack {
+        InventoryView()
+    }
+    .modelContainer(for: PersistenceService.modelTypes, inMemory: true)
 }

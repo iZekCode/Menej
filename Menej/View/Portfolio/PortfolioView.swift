@@ -15,39 +15,39 @@ struct PortfolioView: View {
     @State private var viewModel = PortfolioViewModel()
     @State private var isAddingHolding = false
 
+    // No NavigationStack of its own — pushed onto NetWorthHomeView's stack
+    // from the Breakdown card.
     var body: some View {
-        NavigationStack {
-            List {
-                if holdings.isEmpty {
-                    EmptyStateView(
-                        systemImage: "chart.pie",
-                        title: "No holdings yet",
-                        message: "Add crypto or stocks to track your portfolio."
-                    )
-                } else {
-                    summarySection
-                    holdingsSection
+        List {
+            if holdings.isEmpty {
+                EmptyStateView(
+                    systemImage: "chart.pie",
+                    title: "No holdings yet",
+                    message: "Add crypto or stocks to track your portfolio."
+                )
+            } else {
+                summarySection
+                holdingsSection
+            }
+        }
+        .navigationTitle("Portfolio")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Add Holding", systemImage: "plus") {
+                    isAddingHolding = true
                 }
             }
-            .navigationTitle("Portfolio")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Add Holding", systemImage: "plus") {
-                        isAddingHolding = true
-                    }
-                }
-            }
-            .sheet(isPresented: $isAddingHolding) {
-                AddHoldingView()
-            }
-            .refreshable {
-                await viewModel.refresh(holdings: holdings)
-            }
-            // `id: holdings.count` re-runs the refresh when a holding is
-            // added or deleted, not just on first appearance.
-            .task(id: holdings.count) {
-                await viewModel.refresh(holdings: holdings)
-            }
+        }
+        .sheet(isPresented: $isAddingHolding) {
+            AddHoldingView()
+        }
+        .refreshable {
+            await viewModel.refresh(holdings: holdings)
+        }
+        // `id: holdings.count` re-runs the refresh when a holding is
+        // added or deleted, not just on first appearance.
+        .task(id: holdings.count) {
+            await viewModel.refresh(holdings: holdings)
         }
     }
 
@@ -214,6 +214,8 @@ private struct AddHoldingView: View {
 }
 
 #Preview {
-    PortfolioView()
-        .modelContainer(for: PersistenceService.modelTypes, inMemory: true)
+    NavigationStack {
+        PortfolioView()
+    }
+    .modelContainer(for: PersistenceService.modelTypes, inMemory: true)
 }

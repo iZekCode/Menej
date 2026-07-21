@@ -22,12 +22,6 @@ struct ContentView: View {
             Tab("Ledger", systemImage: "list.bullet.rectangle") {
                 TransactionListView()
             }
-            Tab("Portfolio", systemImage: "chart.pie") {
-                PortfolioView()
-            }
-            Tab("Inventory", systemImage: "shippingbox") {
-                InventoryView()
-            }
             Tab("Insights", systemImage: "sparkles") {
                 InsightsView()
             }
