@@ -308,7 +308,7 @@ private struct HoldingRow: View {
 /// Circular ticker logo, fetched from LogoService's keyless CDNs. Falls back
 /// to a plain monogram — while loading, on a failed/missing quote, or for
 /// instruments with no logo source (gold, mutual funds) — same pattern as
-/// InventoryView's ItemThumbnail falling back to a system icon. Deliberately
+/// InventoryView's ItemPhoto falling back to a system icon. Deliberately
 /// neutral, not tinted to the holding's donut-slice color — that color
 /// identifies a slice's *position in the ranking*, not the instrument
 /// itself, so carrying it onto the logo would be a false association.

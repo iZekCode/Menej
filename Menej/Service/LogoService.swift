@@ -17,7 +17,7 @@
 //  Coverage isn't universal — an obscure or newly-listed symbol can still
 //  404. This only builds the URL; HoldingLogo (PortfolioView) is what
 //  handles a failed load by falling back to a plain monogram, same as
-//  InventoryView's ItemThumbnail falls back to a system icon when there's
+//  InventoryView's ItemPhoto falls back to a system icon when there's
 //  no photo.
 //
 //  Gold/mutual funds/time deposits have no ticker to look up a logo for.

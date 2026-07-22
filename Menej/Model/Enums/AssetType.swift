@@ -53,6 +53,28 @@ enum AssetType: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// Icon shown when an asset has no image of its own. Inventory's grid
+    /// leans on this: a wall of identical `shippingbox` glyphs (what the old
+    /// list used) tells you nothing, whereas one glyph per category still
+    /// distinguishes a laptop from a motorbike at a glance.
+    var systemImage: String {
+        switch self {
+        case .bankAccount: return "banknote"
+        case .eWallet: return "wallet.bifold"
+        case .cash: return "dollarsign.circle"
+        case .crypto: return "bitcoinsign.circle"
+        case .stock: return "chart.line.uptrend.xyaxis"
+        case .mutualFund: return "chart.pie"
+        case .timeDeposit: return "lock.circle"
+        case .gold: return "circle.hexagongrid.fill"
+        case .brokerageCash: return "building.columns"
+        case .electronics: return "laptopcomputer"
+        case .vehicle: return "car.fill"
+        case .watch: return "watch.analog"
+        case .jewelry: return "diamond"
+        }
+    }
+
     var isPhysical: Bool {
         switch self {
         case .electronics, .vehicle, .watch, .jewelry: return true
