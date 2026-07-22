@@ -35,12 +35,12 @@ struct InsightsView: View {
     /// The month's income — credits that aren't transfers between the user's
     /// own accounts — so the user can see where the money came from.
     private var monthIncome: [Transaction] {
-        monthTransactions.filter { $0.direction == .credit && !$0.isTransfer }
+        monthTransactions.filter { $0.direction == .credit && !$0.isTransferLike }
     }
 
     /// The month's spending — debits that aren't own-account transfers.
     private var monthSpending: [Transaction] {
-        monthTransactions.filter { $0.direction == .debit && !$0.isTransfer }
+        monthTransactions.filter { $0.direction == .debit && !$0.isTransferLike }
     }
 
     private var monthIncomeTotal: Decimal {
@@ -52,7 +52,7 @@ struct InsightsView: View {
     private var incomeDeltaFraction: Double? {
         guard let range = AnalyticsPeriod.singleMonth.previousDateRange(reference: selectedMonth) else { return nil }
         let previous = transactions
-            .filter { range.contains($0.date) && $0.direction == .credit && !$0.isTransfer }
+            .filter { range.contains($0.date) && $0.direction == .credit && !$0.isTransferLike }
             .reduce(Decimal(0)) { $0 + $1.amount }
         guard previous > 0 else { return nil }
         let delta = monthIncomeTotal - previous

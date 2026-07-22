@@ -56,4 +56,16 @@ final class Transaction {
     var signedAmount: Decimal {
         direction == .debit ? -amount : amount
     }
+
+    /// Money moving between the user's own accounts, by either signal:
+    /// `isTransfer` (a dedup match the user confirmed) or `categoryId ==
+    /// .transfer` (categorized as a transfer directly — e.g. a GoPay/OVO
+    /// top-up whose other leg was never imported, so there was nothing to
+    /// dedup-match against). Insights and the month drill-downs must exclude
+    /// on this, not on `isTransfer` alone: a `.transfer`-categorized
+    /// transaction with no confirmed match used to sail straight through as
+    /// income or spend.
+    var isTransferLike: Bool {
+        isTransfer || categoryId == .transfer
+    }
 }

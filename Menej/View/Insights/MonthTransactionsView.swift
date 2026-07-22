@@ -30,8 +30,8 @@ struct MonthTransactionsView: View {
         func matches(_ transaction: Transaction) -> Bool {
             switch self {
             case .all: return true
-            case .spending: return transaction.direction == .debit && !transaction.isTransfer
-            case .income: return transaction.direction == .credit && !transaction.isTransfer
+            case .spending: return transaction.direction == .debit && !transaction.isTransferLike
+            case .income: return transaction.direction == .credit && !transaction.isTransferLike
             }
         }
     }

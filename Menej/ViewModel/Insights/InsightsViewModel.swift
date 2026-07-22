@@ -77,7 +77,7 @@ final class InsightsViewModel {
         var seenGroups = Set<UUID>()
         var entries: [AnalyticsEntry] = []
         for transaction in transactions {
-            guard !transaction.isTransfer else { continue }
+            guard !transaction.isTransferLike else { continue }
             if let groupId = transaction.dedupGroupId {
                 guard !seenGroups.contains(groupId) else { continue }
                 seenGroups.insert(groupId)
