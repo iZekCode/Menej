@@ -60,19 +60,32 @@ enum SeedDataService {
         return result
     }
 
-    /// Wipes existing Accounts/Statements/Transactions/Snapshots before
-    /// reseeding — for iterating on parsing/categorization changes without
-    /// needing to delete and reinstall the app. Snapshots are included
-    /// because they're otherwise frozen once created for a given month
-    /// (see SnapshotService) — without wiping them, a second reseed would
-    /// silently keep the first run's stale snapshots.
+    /// Wipes what seeding produces — Statements, Transactions, Snapshots —
+    /// before reseeding, for iterating on parsing/categorization changes
+    /// without needing to delete and reinstall the app. Snapshots are
+    /// included because they're otherwise frozen once created for a given
+    /// month (see SnapshotService) — without wiping them, a second reseed
+    /// would silently keep the first run's stale snapshots.
+    ///
+    /// Accounts are deliberately NOT deleted. An Account row is part derived
+    /// and part user-authored: `findOrCreateAccount` creates it, but its
+    /// nickname and — for GoPay and Grab — its balance anchor are typed by
+    /// the user and cannot be regenerated from any statement, because those
+    /// two issuers don't print a balance at all. Deleting the row took them
+    /// with it, so every reseed silently reset both accounts to "balance not
+    /// set". Only the statement-derived anchor is cleared here; a manual one
+    /// is left alone.
     @MainActor
     @discardableResult
     static func resetAndSeed(modelContext: ModelContext) -> SeedResult {
         try? modelContext.delete(model: Transaction.self)
         try? modelContext.delete(model: Statement.self)
-        try? modelContext.delete(model: Account.self)
         try? modelContext.delete(model: NetWorthSnapshot.self)
+        let accounts = (try? modelContext.fetch(FetchDescriptor<Account>())) ?? []
+        for account in accounts where !account.isBalanceManual {
+            account.balance = 0
+            account.lastSyncedAt = nil
+        }
         try? modelContext.save()
         let result = seed(modelContext: modelContext)
         print("[SeedDataService] \(result)")
