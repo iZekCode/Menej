@@ -24,6 +24,11 @@ struct PortfolioView: View {
     @Query private var holdings: [Holding]
     @State private var viewModel = PortfolioViewModel()
     @State private var isAddingHolding = false
+    @State private var editingHolding: Holding?
+    /// Bumped on every save so the price refresh re-runs after an edit —
+    /// `holdings.count` alone can't see one, which would leave the row
+    /// showing a value still computed from the old quantity.
+    @State private var editRevision = 0
     @State private var displayCurrency: PortfolioCurrency = .usd
 
     // No NavigationStack of its own — pushed onto NetWorthHomeView's stack
@@ -55,17 +60,22 @@ struct PortfolioView: View {
             }
         }
         .sheet(isPresented: $isAddingHolding) {
-            AddHoldingView()
+            HoldingFormView(mode: .add) { editRevision += 1 }
+        }
+        .sheet(item: $editingHolding) { holding in
+            HoldingFormView(mode: .edit(holding)) { editRevision += 1 }
         }
         .refreshable {
             await viewModel.refresh(holdings: holdings)
         }
-        // `id: holdings.count` re-runs the refresh when a holding is
-        // added or deleted, not just on first appearance.
-        .task(id: holdings.count) {
+        // Re-runs the refresh when a holding is added, deleted, or edited —
+        // not just on first appearance.
+        .task(id: refreshKey) {
             await viewModel.refresh(holdings: holdings)
         }
     }
+
+    private var refreshKey: String { "\(holdings.count)-\(editRevision)" }
 
     private var summarySection: some View {
         Section {
@@ -104,11 +114,11 @@ struct PortfolioView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if let lastRefreshedAt = viewModel.lastRefreshedAt {
-                    Text("Prices as of \(lastRefreshedAt, style: .time)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+//                if let lastRefreshedAt = viewModel.lastRefreshedAt {
+//                    Text("Prices as of \(lastRefreshedAt, style: .time)")
+//                        .font(.caption)
+//                        .foregroundStyle(.secondary)
+//                }
             }
             .padding(.vertical, 4)
 
@@ -205,12 +215,27 @@ struct PortfolioView: View {
     private var holdingsSection: some View {
         Section {
             ForEach(slices) { slice in
-                HoldingRow(
-                    display: slice.display,
-                    currencyCode: effectiveCurrency.rawValue,
-                    rate: displayRate,
-                    isHidden: appState.areAmountsHidden
-                )
+                // A plain Button keeps the row's own layout (a NavigationLink
+                // would push, and Add is a sheet — mixing the two for the same
+                // form would be inconsistent), so the chevron is drawn here to
+                // keep the row visibly tappable.
+                Button {
+                    editingHolding = slice.display.holding
+                } label: {
+                    HStack(spacing: AppSpacing.grid) {
+                        HoldingRow(
+                            display: slice.display,
+                            currencyCode: effectiveCurrency.rawValue,
+                            rate: displayRate,
+                            isHidden: appState.areAmountsHidden
+                        )
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Edit holding")
             }
             .onDelete(perform: deleteHoldings)
         }
@@ -381,17 +406,57 @@ private struct PortfolioLegendRow: View {
     }
 }
 
-private struct AddHoldingView: View {
+/// Adding and editing share one form: the fields, per-instrument prompts and
+/// validation are identical, and only what Save does differs.
+private struct HoldingFormView: View {
+    enum Mode {
+        case add
+        case edit(Holding)
+
+        var holding: Holding? {
+            if case .edit(let holding) = self { return holding }
+            return nil
+        }
+    }
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    @State private var instrument: AssetType = .stock
-    @State private var symbol = ""
+    private let mode: Mode
+    private let onSave: () -> Void
+
+    @State private var instrument: AssetType
+    @State private var symbol: String
     @State private var quantity: Decimal?
     @State private var avgCost: Decimal?
-    @State private var currency = "IDR"
+    @State private var currency: String
+
+    init(mode: Mode, onSave: @escaping () -> Void = {}) {
+        self.mode = mode
+        self.onSave = onSave
+        let holding = mode.holding
+        _instrument = State(initialValue: holding?.instrument ?? .stock)
+        _symbol = State(initialValue: holding?.symbol ?? "")
+        _quantity = State(initialValue: holding?.quantity)
+        _avgCost = State(initialValue: holding?.avgCost)
+        _currency = State(initialValue: holding?.currency ?? "IDR")
+    }
 
     private static let portfolioInstruments: [AssetType] = [.crypto, .stock, .brokerageCash]
+
+    /// The instruments the app can price today, plus whatever this holding
+    /// already is. A holding whose type isn't in that list (gold, a mutual
+    /// fund) would otherwise open on a blank Picker, which reads as a cleared
+    /// field even though an untouched save writes the original value back.
+    private var instrumentOptions: [AssetType] {
+        guard let current = mode.holding?.instrument,
+              !Self.portfolioInstruments.contains(current) else {
+            return Self.portfolioInstruments
+        }
+        return Self.portfolioInstruments + [current]
+    }
+
+    private var isEditing: Bool { mode.holding != nil }
 
     private var canSave: Bool {
         !symbol.trimmingCharacters(in: .whitespaces).isEmpty
@@ -404,7 +469,7 @@ private struct AddHoldingView: View {
             Form {
                 Section {
                     Picker("Instrument", selection: $instrument) {
-                        ForEach(Self.portfolioInstruments) { type in
+                        ForEach(instrumentOptions) { type in
                             Text(type.displayName).tag(type)
                         }
                     }
@@ -426,14 +491,14 @@ private struct AddHoldingView: View {
                     Text(costFooter)
                 }
             }
-            .navigationTitle("Add Holding")
+            .navigationTitle(isEditing ? "Edit Holding" : "Add Holding")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { save() }
+                    Button(isEditing ? "Save" : "Add") { save() }
                         .disabled(!canSave)
                 }
             }
@@ -460,15 +525,57 @@ private struct AddHoldingView: View {
     }
 
     private func save() {
-        let holding = Holding(
-            instrument: instrument,
-            symbol: symbol.trimmingCharacters(in: .whitespaces),
-            quantity: quantity ?? 0,
-            avgCost: avgCost ?? 0,
-            currency: currency
-        )
-        modelContext.insert(holding)
+        let trimmedSymbol = symbol.trimmingCharacters(in: .whitespaces)
+        switch mode {
+        case .add:
+            modelContext.insert(Holding(
+                instrument: instrument,
+                symbol: trimmedSymbol,
+                quantity: quantity ?? 0,
+                avgCost: avgCost ?? 0,
+                currency: currency
+            ))
+        case .edit(let holding):
+            apply(to: holding, symbol: trimmedSymbol)
+        }
+        onSave()
         dismiss()
+    }
+
+    /// `lastValueIDR` is a whole-position IDR figure that net worth and the
+    /// monthly snapshots read synchronously and offline (`offlineValueIDR`),
+    /// so an edit can't just leave it sitting there:
+    ///
+    /// - **quantity changed** — the per-unit price behind it is still good, so
+    ///   rescale instead of discarding a fresh quote. Clearing it here would
+    ///   drop a foreign-currency holding's contribution to zero until the next
+    ///   refresh, since `offlineValueIDR` has no honest fallback for those.
+    /// - **symbol / instrument / currency changed** — this is a different
+    ///   instrument now and the cached value describes the old one. Clearing
+    ///   returns it to the same "not yet priced" state a new holding starts in.
+    /// - **avgCost changed** — cost basis feeds unrealized P/L only, never
+    ///   value, so the cache stays valid.
+    private func apply(to holding: Holding, symbol trimmedSymbol: String) {
+        let newQuantity = quantity ?? 0
+        let isDifferentInstrument = holding.symbol != trimmedSymbol
+            || holding.instrument != instrument
+            || holding.currency != currency
+
+        if isDifferentInstrument {
+            holding.lastValueIDR = nil
+            holding.lastQuotedAt = nil
+        } else if let lastValueIDR = holding.lastValueIDR, holding.quantity != newQuantity {
+            // A zero old quantity has no per-unit price to scale from.
+            holding.lastValueIDR = holding.quantity > 0
+                ? lastValueIDR / holding.quantity * newQuantity
+                : nil
+        }
+
+        holding.instrument = instrument
+        holding.symbol = trimmedSymbol
+        holding.quantity = newQuantity
+        holding.avgCost = avgCost ?? 0
+        holding.currency = currency
     }
 }
 

@@ -51,7 +51,7 @@ struct InventoryView: View {
                     }
                     .onDelete(perform: deleteItems)
                 } footer: {
-                    Text("Values follow a per-category curve unless set manually. Tap an item to edit it.")
+                    Text("Tap an item to edit it.")
                 }
             }
         }
