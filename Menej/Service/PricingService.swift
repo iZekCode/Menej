@@ -17,9 +17,10 @@
 //    .app domain now 301s, which URLSession follows, but the .dev host is
 //    the documented one.
 //
-//  Mutual funds (reksadana) and time deposits have no keyless public quote
-//  source — they throw `.manualValuationOnly` and are valued from
-//  `Holding.manualPrice` (falling back to cost basis) by the caller.
+//  Mutual funds (reksadana), time deposits, and brokerage cash (e.g. an RDN
+//  balance) have no keyless public quote source — they throw
+//  `.manualValuationOnly` and are valued from `Holding.manualPrice`
+//  (falling back to cost basis) by the caller.
 //
 
 import Foundation
@@ -87,7 +88,7 @@ actor PricingService: PricingServiceProtocol {
             let usdPerOunce = try await yahooPrice(symbol: "GC=F").price
             let usdPerGram = usdPerOunce / Self.gramsPerTroyOunce
             return try await usdPerGram * fetchFXRate(from: "USD", to: "IDR")
-        case .mutualFund, .timeDeposit:
+        case .mutualFund, .timeDeposit, .brokerageCash:
             throw PricingError.manualValuationOnly
         case .bankAccount, .eWallet, .cash, .electronics, .vehicle, .watch, .jewelry:
             throw PricingError.unsupportedInstrument(instrument)

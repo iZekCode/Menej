@@ -19,6 +19,13 @@ enum AssetType: String, Codable, CaseIterable, Identifiable {
     case mutualFund
     case timeDeposit
     case gold
+    /// Uninvested IDR sitting in a brokerage cash account (e.g. a Stockbit
+    /// RDN balance) — money that's left the bank but isn't in a specific
+    /// stock yet. Distinct from `.cash` (physical wallet cash, PRD §6
+    /// "Assets": a separate, still-unbuilt liquid asset class) — the two
+    /// are different real-world things and would be confusing to conflate.
+    /// Manual valuation only, same as `.timeDeposit`.
+    case brokerageCash
 
     // Physical (F6) — depreciation curve runs both directions (watches, gold appreciate)
     case electronics
@@ -38,6 +45,7 @@ enum AssetType: String, Codable, CaseIterable, Identifiable {
         case .mutualFund: return "Mutual Fund"
         case .timeDeposit: return "Time Deposit"
         case .gold: return "Gold"
+        case .brokerageCash: return "Cash (RDN)"
         case .electronics: return "Electronics"
         case .vehicle: return "Vehicle"
         case .watch: return "Watch"
@@ -54,7 +62,7 @@ enum AssetType: String, Codable, CaseIterable, Identifiable {
 
     var isPortfolio: Bool {
         switch self {
-        case .crypto, .stock, .mutualFund, .timeDeposit, .gold: return true
+        case .crypto, .stock, .mutualFund, .timeDeposit, .gold, .brokerageCash: return true
         default: return false
         }
     }
