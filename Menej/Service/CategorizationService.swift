@@ -46,10 +46,24 @@ protocol CategorizationServiceProtocol {
 }
 
 final class CategorizationService: CategorizationServiceProtocol {
+    /// `direction`, when present, restricts the rule to money moving that
+    /// way. Most rules are direction-agnostic and leave it nil — a credit in
+    /// a wallet account ("gopay topup", "ovo", "shopeepay") really is an
+    /// own-account transfer and must stay `.transfer`, or net worth
+    /// double-counts it as income. It exists for keywords whose meaning
+    /// flips with direction: "switching" outbound is the user transferring
+    /// money out, but inbound it's someone else's money arriving over the
+    /// interbank switching network — income, not a self-transfer.
     private struct MerchantRule: Codable {
         let keyword: String
         let merchant: String
         let category: Category
+        var direction: Direction? = nil
+
+        func applies(to direction: Direction?) -> Bool {
+            guard let ruleDirection = self.direction else { return true }
+            return ruleDirection == direction
+        }
     }
 
     private static let userCorrectionsKey = "Menej.merchantCorrections"
@@ -154,7 +168,7 @@ final class CategorizationService: CategorizationServiceProtocol {
         if issuer == .grab {
             return lowered.contains("grabfood") ? ("GrabFood", .food) : ("Grab", .transport)
         }
-        for rule in bundledRules where lowered.contains(rule.keyword) {
+        for rule in bundledRules where rule.applies(to: direction) && lowered.contains(rule.keyword) {
             return (rule.merchant, rule.category)
         }
         for (keywords, category) in Self.keywordLayers where keywords.contains(where: lowered.contains) {

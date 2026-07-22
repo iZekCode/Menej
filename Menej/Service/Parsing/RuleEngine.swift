@@ -77,7 +77,28 @@ struct RuleEngine: RuleEngineProtocol {
     )
     static let goPayCoinsOnlyLine = try! NSRegularExpression(pattern: #"^GoPay Coins\s+[\d.]+$"#)
 
-    private static func extractGoPayRows(lines: [String]) -> [RawTransactionRow] {
+    /// PDFKit emits each page's header as a continuation of the previous
+    /// page's last line, glued straight onto that transaction's amount:
+    ///
+    ///     GoPay Saldo -Rp46.065E-statement Halaman 4 dari 6 Periode transaksi …
+    ///
+    /// `goPayAmountLine` is end-anchored, so the glued line matched nothing,
+    /// the record never terminated, and it was dropped — one lost transaction
+    /// per page boundary in every statement of the corpus (12 across the five
+    /// real months, Rp383.030 of spending, including two `Google Play`
+    /// charges). Cutting the header off restores the amount line.
+    private static let goPayPageHeader = try! NSRegularExpression(pattern: #"E-statement\s+Halaman"#)
+
+    private static func stripPageHeaders(_ lines: [String]) -> [String] {
+        lines.map { line in
+            guard let match = goPayPageHeader.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+                  let range = Range(match.range, in: line) else { return line }
+            return String(line[..<range.lowerBound])
+        }
+    }
+
+    private static func extractGoPayRows(lines rawLines: [String]) -> [RawTransactionRow] {
+        let lines = stripPageHeaders(rawLines)
         var rows: [RawTransactionRow] = []
         var index = 0
 
@@ -97,7 +118,6 @@ struct RuleEngine: RuleEngineProtocol {
 
             var recordLines = [line, timeLine]
             var cursor = index + 2
-            var terminated = false
             var coinsOnly = false
 
             while cursor < lines.count {
@@ -112,11 +132,9 @@ struct RuleEngine: RuleEngineProtocol {
                 }
                 recordLines.append(next)
                 if matches(goPayAmountLine, next) {
-                    terminated = true
                     break
                 }
                 if matches(goPayCoinsOnlyLine, next) {
-                    terminated = true
                     coinsOnly = true
                     break
                 }
@@ -127,7 +145,14 @@ struct RuleEngine: RuleEngineProtocol {
             // emitting them as raw rows, so ConfidenceScorer doesn't count
             // deliberately-skipped rows as parse failures (they dragged real
             // statements down to 0.59 "confidence" on a perfect parse).
-            if terminated && !coinsOnly {
+            //
+            // An *unterminated* record is the opposite case: a real
+            // transaction whose amount line couldn't be read. It's emitted so
+            // it lands in `rawRowCount`, fails normalization, and shows up as
+            // lost confidence. Dropping it here shrank ConfidenceScorer's
+            // numerator and denominator alike, which is how the page-break
+            // bug above hid 12 transactions behind a perfect 1.0 score.
+            if !coinsOnly {
                 rows.append(RawTransactionRow(rawLines: recordLines, sourceLineNumber: startLine))
             }
             index = cursor

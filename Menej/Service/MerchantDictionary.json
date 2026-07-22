@@ -67,7 +67,8 @@
   { "keyword": "gojek", "merchant": "Gojek", "category": "transport" },
   { "keyword": "grab", "merchant": "Grab", "category": "transport" },
   { "keyword": "ovo", "merchant": "OVO Top Up", "category": "transfer" },
-  { "keyword": "switching", "merchant": "Bank Transfer", "category": "transfer" },
+  { "keyword": "switching", "merchant": "Bank Transfer", "category": "transfer", "direction": "debit" },
+  { "keyword": "switching", "merchant": "Bank Transfer In", "category": "income", "direction": "credit" },
   { "keyword": "bunga", "merchant": "Bank Interest", "category": "income" },
   { "keyword": "cinema", "merchant": "Cinema", "category": "entertainment" },
   { "keyword": "xxi", "merchant": "Cinema XXI", "category": "entertainment" }
