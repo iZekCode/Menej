@@ -362,20 +362,20 @@ private struct CategoryBreakdownRow: View {
                 }
                 ProgressView(value: min(slice.share, 1))
                     .tint(slice.category.chartTint)
-            }
+            }   
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(Int((slice.share * 100).rounded()))%")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if let deltaFraction {
-                    Label(
-                        "\(Int((abs(deltaFraction) * 100).rounded()))%",
-                        systemImage: deltaFraction >= 0 ? "arrow.up" : "arrow.down"
-                    )
-                    .labelStyle(.titleAndIcon)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                }
+//                if let deltaFraction {
+//                    Label(
+//                        "\(Int((abs(deltaFraction) * 100).rounded()))%",
+//                        systemImage: deltaFraction >= 0 ? "arrow.up" : "arrow.down"
+//                    )
+//                    .labelStyle(.titleAndIcon)
+//                    .font(.caption2)
+//                    .foregroundStyle(.tertiary)
+//                }
             }
             .frame(width: 52, alignment: .trailing)
             Image(systemName: "chevron.right")
