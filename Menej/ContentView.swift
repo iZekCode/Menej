@@ -21,11 +21,11 @@ struct ContentView: View {
             Tab("Import", systemImage: "square.and.arrow.down") {
                 ImportFlowView()
             }
-            Tab("Ledger", systemImage: "list.bullet.rectangle") {
-                TransactionListView()
-            }
             Tab("Insights", systemImage: "sparkles") {
                 InsightsView()
+            }
+            Tab("Ledger", systemImage: "list.bullet.rectangle") {
+                TransactionListView()
             }
             Tab("Settings", systemImage: "gearshape") {
                 SettingsView()

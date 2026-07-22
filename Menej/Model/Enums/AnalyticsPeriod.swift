@@ -19,6 +19,10 @@ enum AnalyticsPeriod: String, CaseIterable, Identifiable {
     case sixMonths
     case year
     case all
+    /// A specific calendar month, resolved from the `reference` date passed to
+    /// `dateRange` (any day within the target month). Powers the month-by-month
+    /// Insights view — the reference is the selected month, not "now".
+    case singleMonth
 
     var id: String { rawValue }
 
@@ -30,6 +34,7 @@ enum AnalyticsPeriod: String, CaseIterable, Identifiable {
         case .sixMonths: return "6M"
         case .year: return "Y"
         case .all: return "All"
+        case .singleMonth: return "M"
         }
     }
 
@@ -40,6 +45,18 @@ enum AnalyticsPeriod: String, CaseIterable, Identifiable {
         case .sixMonths: return "6 Months"
         case .year: return "This Year"
         case .all: return "All Time"
+        case .singleMonth: return "This Month"
+        }
+    }
+
+    /// Header phrasing, e.g. "Spent this month" / "Spent in the last 6 months".
+    var spentLabel: String {
+        switch self {
+        case .week: return "Spent this week"
+        case .month, .singleMonth: return "Spent this month"
+        case .sixMonths: return "Spent in the last 6 months"
+        case .year: return "Spent this year"
+        case .all: return "Spent all time"
         }
     }
 
@@ -48,7 +65,7 @@ enum AnalyticsPeriod: String, CaseIterable, Identifiable {
     var comparisonLabel: String? {
         switch self {
         case .week: return "vs last week"
-        case .month: return "vs last month"
+        case .month, .singleMonth: return "vs last month"
         case .sixMonths: return "vs previous 6 months"
         case .year: return "vs last year"
         case .all: return nil
@@ -60,7 +77,7 @@ enum AnalyticsPeriod: String, CaseIterable, Identifiable {
     /// readable (7 days, ~30 days, 6 months, 12 months).
     var bucketComponent: Calendar.Component {
         switch self {
-        case .week, .month: return .day
+        case .week, .month, .singleMonth: return .day
         case .sixMonths, .year, .all: return .month
         }
     }
@@ -68,10 +85,17 @@ enum AnalyticsPeriod: String, CaseIterable, Identifiable {
     /// Half-open date range [start, end) covering this period relative to
     /// `reference`. `.all` returns nil — the caller uses the full data span.
     func dateRange(reference: Date, calendar: Calendar = .current) -> Range<Date>? {
-        guard self != .all else { return nil }
-        let end = reference
-        guard let start = startDate(reference: reference, calendar: calendar) else { return nil }
-        return start..<end
+        switch self {
+        case .all:
+            return nil
+        case .singleMonth:
+            // The full calendar month containing `reference`.
+            guard let interval = calendar.dateInterval(of: .month, for: reference) else { return nil }
+            return interval.start..<interval.end
+        case .week, .month, .sixMonths, .year:
+            guard let start = startDate(reference: reference, calendar: calendar) else { return nil }
+            return start..<reference
+        }
     }
 
     /// The immediately preceding, equal-length range — [prevStart, start) —
@@ -89,7 +113,10 @@ enum AnalyticsPeriod: String, CaseIterable, Identifiable {
         switch self {
         case .week:
             return calendar.date(byAdding: .day, value: -7, to: reference)
-        case .month:
+        case .month, .singleMonth:
+            // For singleMonth this is only reached via previousDateRange with
+            // `reference` = start of the selected month, so -1 month gives the
+            // start of the previous month (its comparison baseline).
             return calendar.date(byAdding: .month, value: -1, to: reference)
         case .sixMonths:
             return calendar.date(byAdding: .month, value: -6, to: reference)

@@ -14,45 +14,49 @@ struct InsightsView: View {
     @Query private var transactions: [Transaction]
     @Query private var accounts: [Account]
     @State private var viewModel = InsightsViewModel()
-    @State private var period: AnalyticsPeriod = .month
+    @State private var selectedMonth: Date = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
+
+    private var issuerByAccount: [UUID: Issuer] {
+        Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0.issuer) })
+    }
+
+    /// Every transaction in the selected month, newest first — for the
+    /// "Last Transactions" preview and its full-list drill-in.
+    private var monthTransactions: [Transaction] {
+        guard let range = AnalyticsPeriod.singleMonth.dateRange(reference: selectedMonth) else { return transactions }
+        return transactions.filter { range.contains($0.date) }.sorted { $0.date > $1.date }
+    }
 
     var body: some View {
         // Computed once per body evaluation (not cached via `.onAppear`, which
         // would go stale — see InsightsViewModel.swift), reused across sections.
-        let liquidAssets = accounts.reduce(Decimal(0)) { $0 + $1.balance }
-        let analytics = viewModel.analytics(transactions: transactions, liquidAssets: liquidAssets, period: period)
+        let analytics = viewModel.analytics(transactions: transactions, period: .singleMonth, reference: selectedMonth)
 
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppSpacing.margin) {
-                    Picker("Period", selection: $period) {
-                        ForEach(AnalyticsPeriod.allCases) { period in
-                            Text(period.shortLabel).tag(period)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    MonthStepper(month: $selectedMonth)
 
-                    if !analytics.hasSpending && analytics.runwayMonths == nil {
+                    if !analytics.hasData {
                         EmptyStateView(
-                            systemImage: "sparkles",
-                            title: "Not enough data yet",
-                            message: "Import a month of statements to see your spending analytics."
+                            systemImage: "calendar",
+                            title: "Nothing this month",
+                            message: "No transactions for this month. Step to another month or import a statement."
                         )
                         .padding(.top, AppSpacing.margin)
                     } else {
-                        HeaderView(period: period, total: analytics.expenseTotal, comparison: analytics.comparison)
+                        HeaderView(period: .singleMonth, total: analytics.expenseTotal, comparison: analytics.comparison)
 
                         if !analytics.timeSeries.isEmpty {
                             SectionCard(title: "Spending Over Time") {
-                                SpendingBarChart(buckets: analytics.timeSeries, unit: period.bucketComponent)
+                                SpendingBarChart(buckets: analytics.timeSeries, unit: .day)
                             }
                         }
                         if !analytics.breakdown.isEmpty {
                             CategoryBreakdownSection(
                                 breakdown: analytics.breakdown,
                                 total: analytics.expenseTotal,
-                                comparison: analytics.comparison,
-                                period: period
+                                comparison: analytics.comparison
                             )
                         }
                         if analytics.cashflow.income > 0 || analytics.cashflow.expense > 0 {
@@ -61,15 +65,79 @@ struct InsightsView: View {
                         if !analytics.largestExpenses.isEmpty {
                             LargestExpensesSection(expenses: analytics.largestExpenses)
                         }
+                        if !monthTransactions.isEmpty {
+                            LastTransactionsSection(
+                                transactions: Array(monthTransactions.prefix(5)),
+                                issuerByAccount: issuerByAccount,
+                                month: selectedMonth
+                            )
+                        }
                     }
                 }
                 .padding(AppSpacing.margin)
             }
             .navigationTitle("Insights")
             .navigationDestination(for: Category.self) { category in
-                CategoryDetailView(category: category, period: period)
+                CategoryDetailView(category: category, period: .singleMonth, reference: selectedMonth)
             }
         }
+    }
+}
+
+// MARK: - Month stepper
+
+private struct MonthStepper: View {
+    @Binding var month: Date
+
+    private let calendar = Calendar.current
+
+    /// Can't step into the future — disable the right arrow once at the
+    /// current calendar month.
+    private var isAtCurrentMonth: Bool {
+        calendar.isDate(month, equalTo: .now, toGranularity: .month)
+    }
+
+    var body: some View {
+        HStack {
+            Button {
+                step(by: -1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.headline)
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+            Text(monthLabel)
+                .font(.title3.weight(.semibold))
+                .contentTransition(.numericText())
+            Spacer()
+
+            Button {
+                step(by: 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.headline)
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .disabled(isAtCurrentMonth)
+            .opacity(isAtCurrentMonth ? 0.3 : 1)
+        }
+        .foregroundStyle(AppColor.accent)
+    }
+
+    private var monthLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: month)
+    }
+
+    private func step(by months: Int) {
+        guard let stepped = calendar.date(byAdding: .month, value: months, to: month),
+              let start = calendar.dateInterval(of: .month, for: stepped)?.start else { return }
+        withAnimation(.snappy) { month = start }
     }
 }
 
@@ -82,7 +150,7 @@ private struct HeaderView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Spent \(period.longLabel.lowercased())")
+            Text(period.spentLabel)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             AmountText(amount: total)
@@ -100,13 +168,52 @@ private struct HeaderView: View {
     }
 }
 
+// MARK: - Last transactions
+
+private struct LastTransactionsSection: View {
+    let transactions: [Transaction]
+    let issuerByAccount: [UUID: Issuer]
+    let month: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.grid) {
+            // Header doubles as the drill-in to the full month list.
+            NavigationLink {
+                MonthTransactionsView(month: month)
+            } label: {
+                HStack {
+                    Text("Last Transactions")
+                        .font(AppTypography.sectionTitle)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            ForEach(Array(transactions.enumerated()), id: \.element.id) { index, transaction in
+                if index > 0 { Divider() }
+                NavigationLink {
+                    TransactionDetailView(transaction: transaction)
+                } label: {
+                    TransactionRow(transaction: transaction, issuer: issuerByAccount[transaction.accountId])
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(AppSpacing.margin)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: AppSpacing.cardCornerRadius))
+    }
+}
+
 // MARK: - Category breakdown
 
 private struct CategoryBreakdownSection: View {
     let breakdown: [CategorySpend]
     let total: Decimal
     let comparison: PeriodComparison
-    let period: AnalyticsPeriod
 
     var body: some View {
         SectionCard(title: "By Category") {

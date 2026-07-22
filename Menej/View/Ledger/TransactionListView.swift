@@ -270,7 +270,9 @@ struct TransactionListView: View {
     }
 }
 
-private struct TransactionRow: View {
+/// Shared ledger-style row (title, source + category tags, signed amount).
+/// Also reused by the Insights month transactions list.
+struct TransactionRow: View {
     let transaction: Transaction
     let issuer: Issuer?
 
