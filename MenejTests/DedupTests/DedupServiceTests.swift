@@ -6,8 +6,6 @@
 //  GoPay top-up from BCA, paying Grab with GoPay, self-transfers,
 //  pending vs. settled from different sources.
 //
-//  NOTE: not yet part of any Xcode target — see ParsingServiceTests.swift.
-//
 
 import Testing
 @testable import Menej

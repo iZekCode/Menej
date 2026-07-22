@@ -4,9 +4,10 @@
 //
 //  Locates the real 15-statement corpus and the shipped parser rules for the
 //  reconciliation suites. Everything is addressed relative to this source
-//  file rather than through `Bundle.module`, so the tests run as soon as the
-//  files are added to a test target, with no resource-copy build phase to
-//  configure first.
+//  file rather than through `Bundle.module`, so no resource-copy build phase
+//  is needed. The trade-off: `#filePath` bakes in a compile-time absolute
+//  path, so these suites find the corpus on the machine that built them and
+//  nowhere else — fine locally, not portable to CI.
 //
 //  Rules are decoded from the same JSON the app bundles, so a change to
 //  `Rules/*.json` is covered by these tests too.

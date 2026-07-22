@@ -2,8 +2,6 @@
 //  LogoServiceTests.swift
 //  MenejTests
 //
-//  NOTE: not yet part of any Xcode target — see ParsingServiceTests.swift.
-//
 
 import Testing
 @testable import Menej

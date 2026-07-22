@@ -14,8 +14,7 @@
 //  271,000 credits in a row — a parser can lose one and still look close on
 //  any check that only compares sums against a rounded expectation.
 //
-//  NOTE: like ParsingServiceTests, this file is not yet part of an Xcode
-//  target. See CorpusFixtures.swift for how the corpus is located.
+//  See CorpusFixtures.swift for how the corpus is located.
 //
 
 import Foundation
