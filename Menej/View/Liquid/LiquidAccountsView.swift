@@ -40,20 +40,16 @@ struct LiquidAccountsView: View {
                     message: "Add MyBCA, GoPay, or Grab to record a balance, or import a statement to create one automatically."
                 )
             } else {
+                summarySection
                 accountsSection
                 transfersSection
             }
         }
+        // Matches PortfolioView — List's default section spacing is wider than
+        // the AppSpacing.margin rhythm the rest of the app uses between blocks.
+        .listSectionSpacing(AppSpacing.margin)
         .navigationTitle("Liquid")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    appState.areAmountsHidden.toggle()
-                } label: {
-                    Image(systemName: appState.areAmountsHidden ? "eye.slash" : "eye")
-                }
-                .accessibilityLabel(appState.areAmountsHidden ? "Show amounts" : "Hide amounts")
-            }
             if !missingIssuers.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -72,6 +68,44 @@ struct LiquidAccountsView: View {
     }
 
     // MARK: - Sections
+
+    /// Same shape as PortfolioView's and InventoryView's headline: label,
+    /// inline eye, total. All three are net-worth components reached from the
+    /// same Breakdown card, so they should open the same way — and this
+    /// figure is the one that card shows for "Liquid".
+    private var summarySection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: AppSpacing.grid) {
+                    Text("Total Liquid")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        appState.areAmountsHidden.toggle()
+                    } label: {
+                        Image(systemName: appState.areAmountsHidden ? "eye.slash" : "eye")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(appState.areAmountsHidden ? "Show amounts" : "Hide amounts")
+                }
+                AmountText(amount: liquidTotal, isHidden: appState.areAmountsHidden)
+                    .font(.title.bold())
+                // An unanchored account still rolls forward from zero, so it
+                // contributes a figure that isn't a real balance. Say so
+                // rather than letting the total imply more than it knows.
+                if unanchoredCount > 0 {
+                    Text(unanchoredCount == 1
+                         ? "1 account has no balance set."
+                         : "\(unanchoredCount) accounts have no balance set.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
 
     private var accountsSection: some View {
         Section {
@@ -128,6 +162,16 @@ struct LiquidAccountsView: View {
 
     private var balances: [UUID: Decimal] {
         balanceService.balances(accounts: accounts, transactions: transactions)
+    }
+
+    /// Summed exactly the way `NetWorthHomeView.liquidTotal` does it, so the
+    /// headline here and the Breakdown row that leads to it can't disagree.
+    private var liquidTotal: Decimal {
+        balances.values.reduce(Decimal(0), +)
+    }
+
+    private var unanchoredCount: Int {
+        accounts.filter { !$0.hasBalanceAnchor }.count
     }
 
     private var derivedTransfers: [DerivedTransfer] {
