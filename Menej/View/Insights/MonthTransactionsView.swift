@@ -12,6 +12,29 @@ import SwiftData
 
 struct MonthTransactionsView: View {
     let month: Date
+    var kind: Kind = .all
+
+    /// Which slice of the month to show. `spending`/`income` exclude transfers
+    /// between the user's own accounts (they're neither).
+    enum Kind {
+        case all, spending, income
+
+        var title: String {
+            switch self {
+            case .all: return "Transactions"
+            case .spending: return "Spending"
+            case .income: return "Income"
+            }
+        }
+
+        func matches(_ transaction: Transaction) -> Bool {
+            switch self {
+            case .all: return true
+            case .spending: return transaction.direction == .debit && !transaction.isTransfer
+            case .income: return transaction.direction == .credit && !transaction.isTransfer
+            }
+        }
+    }
 
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
@@ -22,8 +45,8 @@ struct MonthTransactionsView: View {
     }
 
     private var monthTransactions: [Transaction] {
-        guard let range = AnalyticsPeriod.singleMonth.dateRange(reference: month) else { return transactions }
-        return transactions.filter { range.contains($0.date) }
+        let range = AnalyticsPeriod.singleMonth.dateRange(reference: month)
+        return transactions.filter { (range?.contains($0.date) ?? true) && kind.matches($0) }
     }
 
     private var grouped: [(day: Date, transactions: [Transaction])] {
@@ -60,13 +83,13 @@ struct MonthTransactionsView: View {
                 }
             }
         }
-        .navigationTitle(monthTitle)
+        .navigationTitle("\(kind.title) · \(monthTitle)")
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private var monthTitle: String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
+        formatter.dateFormat = "MMM yyyy"
         return formatter.string(from: month)
     }
 

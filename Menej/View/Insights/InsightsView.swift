@@ -10,11 +10,16 @@
 import SwiftUI
 import SwiftData
 
+private enum InsightsTab: String, CaseIterable {
+    case spending, income
+}
+
 struct InsightsView: View {
     @Query private var transactions: [Transaction]
     @Query private var accounts: [Account]
     @State private var viewModel = InsightsViewModel()
     @State private var selectedMonth: Date = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
+    @State private var tab: InsightsTab = .spending
 
     private var issuerByAccount: [UUID: Issuer] {
         Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0.issuer) })
@@ -25,6 +30,33 @@ struct InsightsView: View {
     private var monthTransactions: [Transaction] {
         guard let range = AnalyticsPeriod.singleMonth.dateRange(reference: selectedMonth) else { return transactions }
         return transactions.filter { range.contains($0.date) }.sorted { $0.date > $1.date }
+    }
+
+    /// The month's income — credits that aren't transfers between the user's
+    /// own accounts — so the user can see where the money came from.
+    private var monthIncome: [Transaction] {
+        monthTransactions.filter { $0.direction == .credit && !$0.isTransfer }
+    }
+
+    /// The month's spending — debits that aren't own-account transfers.
+    private var monthSpending: [Transaction] {
+        monthTransactions.filter { $0.direction == .debit && !$0.isTransfer }
+    }
+
+    private var monthIncomeTotal: Decimal {
+        monthIncome.reduce(Decimal(0)) { $0 + $1.amount }
+    }
+
+    /// Income change vs the previous month, for the Income header. nil when
+    /// there's no prior-month income to compare against.
+    private var incomeDeltaFraction: Double? {
+        guard let range = AnalyticsPeriod.singleMonth.previousDateRange(reference: selectedMonth) else { return nil }
+        let previous = transactions
+            .filter { range.contains($0.date) && $0.direction == .credit && !$0.isTransfer }
+            .reduce(Decimal(0)) { $0 + $1.amount }
+        guard previous > 0 else { return nil }
+        let delta = monthIncomeTotal - previous
+        return NSDecimalNumber(decimal: delta).doubleValue / NSDecimalNumber(decimal: previous).doubleValue
     }
 
     var body: some View {
@@ -45,32 +77,17 @@ struct InsightsView: View {
                         )
                         .padding(.top, AppSpacing.margin)
                     } else {
-                        HeaderView(period: .singleMonth, total: analytics.expenseTotal, comparison: analytics.comparison)
+                        Picker("Type", selection: $tab) {
+                            Text("Spending").tag(InsightsTab.spending)
+                            Text("Income").tag(InsightsTab.income)
+                        }
+                        .pickerStyle(.segmented)
 
-                        if !analytics.timeSeries.isEmpty {
-                            SectionCard(title: "Spending Over Time") {
-                                SpendingBarChart(buckets: analytics.timeSeries, unit: .day)
-                            }
-                        }
-                        if !analytics.breakdown.isEmpty {
-                            CategoryBreakdownSection(
-                                breakdown: analytics.breakdown,
-                                total: analytics.expenseTotal,
-                                comparison: analytics.comparison
-                            )
-                        }
-                        if analytics.cashflow.income > 0 || analytics.cashflow.expense > 0 {
-                            CashflowSection(cashflow: analytics.cashflow)
-                        }
-                        if !analytics.largestExpenses.isEmpty {
-                            LargestExpensesSection(expenses: analytics.largestExpenses)
-                        }
-                        if !monthTransactions.isEmpty {
-                            LastTransactionsSection(
-                                transactions: Array(monthTransactions.prefix(5)),
-                                issuerByAccount: issuerByAccount,
-                                month: selectedMonth
-                            )
+                        switch tab {
+                        case .spending:
+                            spendingSections(analytics)
+                        case .income:
+                            incomeSections()
                         }
                     }
                 }
@@ -80,6 +97,66 @@ struct InsightsView: View {
             .navigationDestination(for: Category.self) { category in
                 CategoryDetailView(category: category, period: .singleMonth, reference: selectedMonth)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func spendingSections(_ analytics: InsightsViewModel.Analytics) -> some View {
+        if analytics.expenseTotal > 0 {
+            HeaderView(period: .singleMonth, total: analytics.expenseTotal, comparison: analytics.comparison)
+
+            if !analytics.timeSeries.isEmpty {
+                SectionCard(title: "Spending Over Time") {
+                    SpendingBarChart(buckets: analytics.timeSeries, unit: .day)
+                }
+            }
+            if !analytics.breakdown.isEmpty {
+                CategoryBreakdownSection(
+                    breakdown: analytics.breakdown,
+                    total: analytics.expenseTotal,
+                    comparison: analytics.comparison
+                )
+            }
+            if !analytics.largestExpenses.isEmpty {
+                LargestExpensesSection(expenses: analytics.largestExpenses)
+            }
+            if !monthSpending.isEmpty {
+                TransactionHistorySection(
+                    title: "Spending History",
+                    transactions: Array(monthSpending.prefix(5)),
+                    issuerByAccount: issuerByAccount,
+                    month: selectedMonth,
+                    kind: .spending
+                )
+            }
+        } else {
+            EmptyStateView(
+                systemImage: "cart",
+                title: "No spending this month",
+                message: "Nothing was spent this month."
+            )
+            .padding(.top, AppSpacing.margin)
+        }
+    }
+
+    @ViewBuilder
+    private func incomeSections() -> some View {
+        if monthIncome.isEmpty {
+            EmptyStateView(
+                systemImage: "banknote",
+                title: "No income this month",
+                message: "No money came in this month."
+            )
+            .padding(.top, AppSpacing.margin)
+        } else {
+            IncomeHeaderView(total: monthIncomeTotal, deltaFraction: incomeDeltaFraction)
+            TransactionHistorySection(
+                title: "Income History",
+                transactions: Array(monthIncome.prefix(5)),
+                issuerByAccount: issuerByAccount,
+                month: selectedMonth,
+                kind: .income
+            )
         }
     }
 }
@@ -168,21 +245,50 @@ private struct HeaderView: View {
     }
 }
 
-// MARK: - Last transactions
+// MARK: - Income
 
-private struct LastTransactionsSection: View {
+private struct IncomeHeaderView: View {
+    let total: Decimal
+    let deltaFraction: Double?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Received this month")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            AmountText(amount: total, showSign: true)
+                .font(AppTypography.netWorthHeadline)
+            if let deltaFraction {
+                let up = deltaFraction >= 0
+                Label(
+                    "\(Int((abs(deltaFraction) * 100).rounded()))% vs last month",
+                    systemImage: up ? "arrow.up.right" : "arrow.down.right"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Transaction history (spending / income)
+
+/// A recent-transactions card (last 5) whose header chevron drills into the
+/// full filtered month list. Used for both Spending History and Income History.
+private struct TransactionHistorySection: View {
+    let title: String
     let transactions: [Transaction]
     let issuerByAccount: [UUID: Issuer]
     let month: Date
+    let kind: MonthTransactionsView.Kind
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.grid) {
-            // Header doubles as the drill-in to the full month list.
             NavigationLink {
-                MonthTransactionsView(month: month)
+                MonthTransactionsView(month: month, kind: kind)
             } label: {
                 HStack {
-                    Text("Last Transactions")
+                    Text(title)
                         .font(AppTypography.sectionTitle)
                         .foregroundStyle(.primary)
                     Spacer()
@@ -276,36 +382,6 @@ private struct CategoryBreakdownRow: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
-    }
-}
-
-// MARK: - Cashflow
-
-private struct CashflowSection: View {
-    let cashflow: Cashflow
-
-    var body: some View {
-        SectionCard(title: "Cashflow") {
-            VStack(alignment: .leading, spacing: AppSpacing.grid) {
-                CashflowChart(cashflow: cashflow)
-                Divider()
-                HStack {
-                    Text(savingsLabel)
-                        .font(.subheadline)
-                    Spacer()
-                    if let rate = cashflow.savingsRate {
-                        Text("\(Int((rate * 100).rounded()))%")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(rate >= 0 ? AppColor.gain : AppColor.loss)
-                    }
-                }
-            }
-        }
-    }
-
-    private var savingsLabel: String {
-        guard let rate = cashflow.savingsRate else { return "Net cashflow" }
-        return rate >= 0 ? "Saved this period" : "Overspent this period"
     }
 }
 
