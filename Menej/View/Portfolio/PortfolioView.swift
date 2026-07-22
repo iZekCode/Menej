@@ -24,7 +24,7 @@ struct PortfolioView: View {
     @Query private var holdings: [Holding]
     @State private var viewModel = PortfolioViewModel()
     @State private var isAddingHolding = false
-    @State private var displayCurrency: PortfolioCurrency = .idr
+    @State private var displayCurrency: PortfolioCurrency = .usd
 
     // No NavigationStack of its own — pushed onto NetWorthHomeView's stack
     // from the Breakdown card.
@@ -89,7 +89,7 @@ struct PortfolioView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     AmountText(
                         amount: viewModel.totalValue * displayRate,
-                        currencyCode: displayCurrency.rawValue,
+                        currencyCode: effectiveCurrency.rawValue,
                         showsSymbol: false,
                         isHidden: appState.areAmountsHidden
                     )
@@ -99,7 +99,7 @@ struct PortfolioView: View {
                 // The other currency's equivalent, so switching to USD
                 // doesn't lose the IDR figure everything else on the app
                 // is denominated in.
-                if displayCurrency == .usd, !appState.areAmountsHidden {
+                if effectiveCurrency == .usd, !appState.areAmountsHidden {
                     Text("≈ \(AmountText.string(amount: viewModel.totalValue))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -123,13 +123,16 @@ struct PortfolioView: View {
         }
     }
 
-    /// Renders as "IDR ⌄", styled to sit quietly next to the headline number
+    /// Renders as "USD ⌄", styled to sit quietly next to the headline number
     /// rather than read as a tinted link — a plain `Picker(.menu)` takes the
     /// system accent color, which would compete with the amount for
-    /// attention. Disabled until an IDR→USD rate has actually loaded — never
-    /// lets the screen switch to a "USD" label backed by no real rate.
-    /// Quantities and percentages (allocation weight, unrealized P/L%) are
-    /// unaffected by this: they're unit counts and ratios, not currency.
+    /// attention. The trigger label shows `effectiveCurrency`, not the raw
+    /// selection: on first launch, before an IDR→USD rate has loaded, that
+    /// falls back to IDR so the screen is never captioned "USD" over a
+    /// figure that's actually still IDR. The checkmark below shows the
+    /// user's real selection either way. Quantities and percentages
+    /// (allocation weight, unrealized P/L%) are unaffected by any of this:
+    /// they're unit counts and ratios, not currency.
     private var currencyPicker: some View {
         Menu {
             ForEach(PortfolioCurrency.allCases) { currency in
@@ -145,7 +148,7 @@ struct PortfolioView: View {
             }
         } label: {
             HStack(spacing: 2) {
-                Text(displayCurrency.rawValue)
+                Text(effectiveCurrency.rawValue)
                     .foregroundStyle(.secondary)
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.semibold))
@@ -160,8 +163,15 @@ struct PortfolioView: View {
         .disabled(viewModel.idrToUSDRate == nil)
     }
 
+    /// `displayCurrency` is the user's selection; this is what's actually
+    /// safe to render right now. Falls back to IDR while USD is selected
+    /// but no rate has loaded yet — the only state where the two diverge.
+    private var effectiveCurrency: PortfolioCurrency {
+        displayCurrency == .usd && viewModel.idrToUSDRate == nil ? .idr : displayCurrency
+    }
+
     private var displayRate: Decimal {
-        displayCurrency == .usd ? (viewModel.idrToUSDRate ?? 1) : 1
+        effectiveCurrency == .usd ? (viewModel.idrToUSDRate ?? 1) : 1
     }
 
     /// Largest holding first, colored by rank — see PortfolioPalette. The
@@ -197,8 +207,7 @@ struct PortfolioView: View {
             ForEach(slices) { slice in
                 HoldingRow(
                     display: slice.display,
-                    color: slice.color,
-                    currencyCode: displayCurrency.rawValue,
+                    currencyCode: effectiveCurrency.rawValue,
                     rate: displayRate,
                     isHidden: appState.areAmountsHidden
                 )
@@ -220,12 +229,9 @@ struct PortfolioView: View {
 }
 
 /// Logo + symbol + unrealized P/L on the left, current value + quantity on
-/// the right — see PRD §6 F6. `color` matches this holding's donut slice so
-/// the row, the ring, and the legend read as one system even before the
-/// logo image (if any) loads.
+/// the right — see PRD §6 F6.
 private struct HoldingRow: View {
     let display: HoldingDisplay
-    let color: Color
     /// "IDR" or "USD" — see PortfolioCurrency. `rate` is the multiplier
     /// PortfolioView has already resolved for that code (1 for IDR).
     var currencyCode: String = "IDR"
@@ -237,8 +243,7 @@ private struct HoldingRow: View {
             HoldingLogo(
                 symbol: display.holding.symbol,
                 instrument: display.holding.instrument,
-                currency: display.holding.currency,
-                color: color
+                currency: display.holding.currency
             )
             VStack(alignment: .leading, spacing: 2) {
                 Text(display.holding.symbol)
@@ -276,14 +281,16 @@ private struct HoldingRow: View {
 }
 
 /// Circular ticker logo, fetched from LogoService's keyless CDNs. Falls back
-/// to a color-ringed monogram — while loading, on a failed/missing quote, or
-/// for instruments with no logo source (gold, mutual funds) — same pattern
-/// as InventoryView's ItemThumbnail falling back to a system icon.
+/// to a plain monogram — while loading, on a failed/missing quote, or for
+/// instruments with no logo source (gold, mutual funds) — same pattern as
+/// InventoryView's ItemThumbnail falling back to a system icon. Deliberately
+/// neutral, not tinted to the holding's donut-slice color — that color
+/// identifies a slice's *position in the ranking*, not the instrument
+/// itself, so carrying it onto the logo would be a false association.
 private struct HoldingLogo: View {
     let symbol: String
     let instrument: AssetType
     let currency: String
-    let color: Color
 
     private var url: URL? {
         LogoService.logoURL(symbol: symbol, instrument: instrument, currency: currency)
@@ -306,13 +313,12 @@ private struct HoldingLogo: View {
         .frame(width: 36, height: 36)
         .background(Color(.secondarySystemBackground))
         .clipShape(Circle())
-        .overlay(Circle().strokeBorder(color.opacity(0.5), lineWidth: 1.5))
     }
 
     private var monogram: some View {
         Text(symbol.prefix(1))
             .font(.caption.weight(.semibold))
-            .foregroundStyle(color)
+            .foregroundStyle(.secondary)
     }
 }
 
@@ -333,8 +339,14 @@ private struct UnrealizedPLLabel: View {
             Text("\(AmountText.string(amount: amount, currencyCode: currencyCode, showSign: true)) (\(percentText))")
                 .font(.caption)
                 .numericStyle()
-                .foregroundStyle(amount < 0 ? AppColor.loss : AppColor.gain)
+                .foregroundStyle(plColor)
         }
+    }
+
+    /// A flat position (rounds to exactly 0) is neither a gain nor a loss —
+    /// green would read as "up" for something that hasn't moved.
+    private var plColor: Color {
+        amount == 0 ? .secondary : (amount < 0 ? AppColor.loss : AppColor.gain)
     }
 
     private var percentText: String {
