@@ -14,6 +14,12 @@
 //  lists sum to Rp1.937.554. Every date row in the PDF is captured (records +
 //  coins-only == date lines, in all five months) and June's largest outflow
 //  is Rp349.000 — there is no Rp2.000.000 spend anywhere in the document.
+//  BCA confirms the matching Rp2.000.000 as a top-up, which GoPay does list
+//  as income.
+//
+//  These numbers are what the parser has always produced; nothing here is a
+//  regression baseline. GoPay's text-layer path had no known defect when
+//  these tests were written — they exist to keep it that way.
 //
 
 import Foundation
@@ -62,29 +68,31 @@ struct GoPayCorpusReconciliationTests {
         #expect(debits.reduce(Decimal(0)) { $0 + $1.amount } == expected.debitTotal, "\(expected.filename): debit total")
 
         // GoPay has no closing balance, so `unaccountedAmount` is structurally
-        // 0 and proves nothing. Confidence is the only in-app signal there is,
-        // which is exactly why the page-break bug below stayed invisible.
+        // 0 and proves nothing — asserting on it here would be theatre.
+        // Confidence is the only in-app signal this issuer has, which is why
+        // the row counts above are the real check.
         #expect(statement.confidence == 1.0, "\(expected.filename): confidence")
     }
 
-    /// The regression. PDFKit glues each page's header straight onto the last
-    /// transaction's amount line ("GoPay Saldo -Rp46.065E-statement Halaman 4
-    /// dari 6 …"); because `goPayAmountLine` is end-anchored, that record
-    /// never terminated and was dropped — one lost transaction per page
-    /// boundary, 12 across this corpus (Rp383.030). April lost three real
-    /// ones; these are two of them.
-    @Test func aprilKeepsTheTransactionsAtEveryPageBoundary() throws {
+    /// A record's amount sits on its last line, so a transaction rendered at
+    /// a page boundary is the shape most likely to lose it. `PDFTextExtractor`
+    /// joins pages with an explicit newline, which is what keeps the amount on
+    /// its own line — drop that separator and PDFKit runs the next page's
+    /// header straight onto it ("…-Rp46.065E-statement Halaman 4 dari 6"),
+    /// which `goPayAmountLine` can't match because it is end-anchored.
+    ///
+    /// These three April transactions are each the last on their page, so they
+    /// fail first if that join ever regresses.
+    @Test func transactionsAtPageBoundariesKeepTheirAmount() throws {
         let statement = try Self.parse("GoPay_Apr_26")
 
-        let googlePlay = statement.transactions.filter {
-            $0.rawDescription.contains("Google Play") && $0.amount == 46_065
+        func amount(matching needle: String) -> [Decimal] {
+            statement.transactions.filter { $0.rawDescription.contains(needle) }.map(\.amount)
         }
-        #expect(googlePlay.count == 1)
 
-        let transfer = statement.transactions.filter {
-            $0.rawDescription.contains("Muhamad Aldi") && $0.amount == 2_500
-        }
-        #expect(transfer.count == 1)
+        #expect(amount(matching: "Google Play") == [46_065])
+        #expect(amount(matching: "Muhamad Aldi") == [2_500])
+        #expect(amount(matching: "0420260421233709VYI6") == [47_000])
     }
 
     /// Coins-only cashback rows are deliberately not transactions, and must

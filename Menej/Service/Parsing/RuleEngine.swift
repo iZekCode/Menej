@@ -77,28 +77,7 @@ struct RuleEngine: RuleEngineProtocol {
     )
     static let goPayCoinsOnlyLine = try! NSRegularExpression(pattern: #"^GoPay Coins\s+[\d.]+$"#)
 
-    /// PDFKit emits each page's header as a continuation of the previous
-    /// page's last line, glued straight onto that transaction's amount:
-    ///
-    ///     GoPay Saldo -Rp46.065E-statement Halaman 4 dari 6 Periode transaksi …
-    ///
-    /// `goPayAmountLine` is end-anchored, so the glued line matched nothing,
-    /// the record never terminated, and it was dropped — one lost transaction
-    /// per page boundary in every statement of the corpus (12 across the five
-    /// real months, Rp383.030 of spending, including two `Google Play`
-    /// charges). Cutting the header off restores the amount line.
-    private static let goPayPageHeader = try! NSRegularExpression(pattern: #"E-statement\s+Halaman"#)
-
-    private static func stripPageHeaders(_ lines: [String]) -> [String] {
-        lines.map { line in
-            guard let match = goPayPageHeader.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
-                  let range = Range(match.range, in: line) else { return line }
-            return String(line[..<range.lowerBound])
-        }
-    }
-
-    private static func extractGoPayRows(lines rawLines: [String]) -> [RawTransactionRow] {
-        let lines = stripPageHeaders(rawLines)
+    private static func extractGoPayRows(lines: [String]) -> [RawTransactionRow] {
         var rows: [RawTransactionRow] = []
         var index = 0
 
@@ -146,12 +125,17 @@ struct RuleEngine: RuleEngineProtocol {
             // deliberately-skipped rows as parse failures (they dragged real
             // statements down to 0.59 "confidence" on a perfect parse).
             //
-            // An *unterminated* record is the opposite case: a real
-            // transaction whose amount line couldn't be read. It's emitted so
-            // it lands in `rawRowCount`, fails normalization, and shows up as
-            // lost confidence. Dropping it here shrank ConfidenceScorer's
-            // numerator and denominator alike, which is how the page-break
-            // bug above hid 12 transactions behind a perfect 1.0 score.
+            // An *unterminated* record is the opposite case: a date/time pair
+            // whose amount line was never found, i.e. a real transaction the
+            // parser couldn't read. It's emitted anyway so it lands in
+            // `rawRowCount`, fails normalization, and costs confidence.
+            // Dropping it would move ConfidenceScorer's numerator and
+            // denominator together and report the loss as a perfect parse.
+            //
+            // Hardening, not a fix for an observed failure: the whole corpus
+            // currently terminates every record (records + coins-only ==
+            // date lines, all five statements), so this path never fires on
+            // real input today.
             if !coinsOnly {
                 rows.append(RawTransactionRow(rawLines: recordLines, sourceLineNumber: startLine))
             }

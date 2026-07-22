@@ -5,10 +5,10 @@
 //  Reconciles the myBCA parser against every real statement's own printed
 //  footer — the "MUTASI CR"/"MUTASI DB" block, which carries both a count
 //  and a total the bank computed itself. This is the check that was missing
-//  when a 271,000 credit went missing from the April ledger: the record was
-//  dropped inside `extractBCARecords`, which shrank ConfidenceScorer's
-//  numerator and denominator alike, so a lost transaction still reported
-//  1.0 confidence and nothing in the app disagreed with it.
+//  when a 271,000 credit went missing from a real April import: whatever
+//  dropped it did so inside `extractBCARecords`, which shrank
+//  ConfidenceScorer's numerator and denominator alike, so the loss still
+//  reported 1.0 confidence and nothing in the app disagreed with it.
 //
 //  Counts matter as much as totals here. April's page 3 holds six identical
 //  271,000 credits in a row — a parser can lose one and still look close on
@@ -67,11 +67,12 @@ struct BCACorpusReconciliationTests {
     }
 
     /// The specific regression. April's page 3 renders six 271,000 credits
-    /// back to back with a single balance checkpoint; one of them (note
-    /// "apart", counterparty JENNIFER EDDRICK W) was lost because its amount
-    /// token's OCR baseline drifted into the row above, where it was
-    /// swallowed as the previous record's continuation. The amount is now
-    /// claimed from a Y band around the date anchor, which is immune to that.
+    /// back to back with a single balance checkpoint, and one of them (note
+    /// "apart", counterparty JENNIFER EDDRICK W) was missing from a real
+    /// import. The densest block in the corpus is the one most likely to lose
+    /// a row, whatever the mechanism, so it is worth pinning by name rather
+    /// than trusting the totals alone — eight of these nine are identical in
+    /// amount and date, which is exactly the shape a sum-only check misses.
     @Test func aprilKeepsEveryOneOfTheIdenticalCredits() throws {
         let statement = try Self.parse("MyBCA_Apr_26")
 

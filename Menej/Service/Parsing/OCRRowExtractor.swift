@@ -128,10 +128,14 @@ enum OCRRowExtractor {
 
             // Emitted even when the amount couldn't be read, rather than
             // skipped: a record dropped here leaves ConfidenceScorer's
-            // numerator and denominator equally short, so a lost order still
-            // scores 1.0 (the same blind spot that hid a missing myBCA credit
-            // — see the extractBCARecords note below). `normalizeGrabRow`
-            // rejects the empty amount, which is what makes the loss visible.
+            // numerator and denominator equally short, so a lost order would
+            // still score 1.0 (the same blind spot described in the
+            // extractBCARecords note below). `normalizeGrabRow` rejects the
+            // empty amount, which is what makes the loss visible.
+            //
+            // Hardening, not a fix: Grab reconciles exactly against its own
+            // printed "Jumlah Pemesanan"/"Jumlah" header on all five real
+            // statements, so nothing currently reaches this state.
             let (description, title) = grabDescriptionAndTitle(from: bucket)
             rows.append(RawTransactionRow(
                 rawLines: [dateText, timeText, amountText, description, title],
@@ -374,12 +378,21 @@ enum OCRRowExtractor {
             // The amount is taken from a Y *band* around the date anchor
             // rather than from the anchor's own cluster. On a row this wide
             // the amount's OCR baseline can drift a whole cluster away from
-            // its date's, and when it landed in the row above it was consumed
+            // its date's, and when it lands in the row above it gets consumed
             // as the previous record's continuation and discarded — stranding
             // this anchor with no amount and dropping a real transaction
-            // silently. Confirmed against the real corpus: this is how a
-            // 271,000 credit disappeared from an April statement that still
-            // reported 100% confidence.
+            // silently.
+            //
+            // Reproduced against the real corpus by tightening clusterRows'
+            // tolerance to 0.002, which drops one of April's six identical
+            // 271,000 credits while still reporting 100% confidence. That is
+            // a mechanism, not a diagnosis: a 271,000 credit did go missing
+            // from a real April import, and this is the only path found that
+            // produces exactly that symptom, but the original OCR output was
+            // never captured so the causal link is inference. Note the app
+            // runs iOS Vision while the corpus harness runs macOS Vision —
+            // the two disagree on baselines, which is why the fix removes the
+            // dependency on cluster membership instead of retuning tolerance.
             let amountText = items
                 .filter { bcaAmountColumn.contains($0.x) && $0.y <= anchor.y + bcaBandHalo && $0.y > recordEndY + bcaBandHalo }
                 .max { $0.y < $1.y }?
