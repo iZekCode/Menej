@@ -26,22 +26,22 @@ struct NetWorthHomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppSpacing.margin) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Total Assets")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
                         HStack(spacing: AppSpacing.grid) {
-                            Text(appState.areAmountsHidden ? "••••••" : headlineAmount)
-                                .font(AppTypography.netWorthHeadline)
+                            Text("Total Assets")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                             Button {
                                 appState.areAmountsHidden.toggle()
                             } label: {
                                 Image(systemName: appState.areAmountsHidden ? "eye.slash" : "eye")
-                                    .font(.title3)
+                                    .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(appState.areAmountsHidden ? "Show amounts" : "Hide amounts")
                         }
+                        Text(appState.areAmountsHidden ? "••••••" : headlineAmount)
+                            .font(AppTypography.netWorthHeadline)
                         if let delta = monthlyDelta, !appState.areAmountsHidden {
                             DeltaBadge(delta: delta)
                         }

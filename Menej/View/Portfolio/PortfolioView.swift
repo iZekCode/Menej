@@ -42,6 +42,10 @@ struct PortfolioView: View {
                 holdingsSection
             }
         }
+        // Matches InsightsView's inter-block gap — List's default section
+        // spacing is noticeably wider than the AppSpacing.margin rhythm
+        // every other screen uses between blocks.
+        .listSectionSpacing(AppSpacing.margin)
         .navigationTitle("Portfolio")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -66,28 +70,39 @@ struct PortfolioView: View {
     private var summarySection: some View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
+                HStack(spacing: AppSpacing.grid) {
                     Text("Total Value")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Spacer()
-                    currencyPicker
-                }
-                HStack(spacing: AppSpacing.grid) {
-                    AmountText(
-                        amount: viewModel.totalValue * displayRate,
-                        currencyCode: displayCurrency.rawValue,
-                        isHidden: appState.areAmountsHidden
-                    )
-                    .font(.title2.weight(.semibold))
                     Button {
                         appState.areAmountsHidden.toggle()
                     } label: {
                         Image(systemName: appState.areAmountsHidden ? "eye.slash" : "eye")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(appState.areAmountsHidden ? "Show amounts" : "Hide amounts")
+                }
+                // Symbol dropped here — the picker right after it already
+                // names the currency, so "Rp"/"$" would just repeat it.
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    AmountText(
+                        amount: viewModel.totalValue * displayRate,
+                        currencyCode: displayCurrency.rawValue,
+                        showsSymbol: false,
+                        isHidden: appState.areAmountsHidden
+                    )
+                    .font(.title.bold())
+                    currencyPicker
+                }
+                // The other currency's equivalent, so switching to USD
+                // doesn't lose the IDR figure everything else on the app
+                // is denominated in.
+                if displayCurrency == .usd, !appState.areAmountsHidden {
+                    Text("≈ \(AmountText.string(amount: viewModel.totalValue))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 if let lastRefreshedAt = viewModel.lastRefreshedAt {
                     Text("Prices as of \(lastRefreshedAt, style: .time)")
@@ -108,18 +123,40 @@ struct PortfolioView: View {
         }
     }
 
-    /// Disabled until an IDR→USD rate has actually loaded — never lets the
-    /// screen switch to a "USD" label backed by no real rate. Quantities and
-    /// percentages (allocation weight, unrealized P/L%) are unaffected by
-    /// this: they're unit counts and ratios, not currency.
+    /// Renders as "IDR ⌄", styled to sit quietly next to the headline number
+    /// rather than read as a tinted link — a plain `Picker(.menu)` takes the
+    /// system accent color, which would compete with the amount for
+    /// attention. Disabled until an IDR→USD rate has actually loaded — never
+    /// lets the screen switch to a "USD" label backed by no real rate.
+    /// Quantities and percentages (allocation weight, unrealized P/L%) are
+    /// unaffected by this: they're unit counts and ratios, not currency.
     private var currencyPicker: some View {
-        Picker("Currency", selection: $displayCurrency) {
+        Menu {
             ForEach(PortfolioCurrency.allCases) { currency in
-                Text(currency.rawValue).tag(currency)
+                Button {
+                    displayCurrency = currency
+                } label: {
+                    if currency == displayCurrency {
+                        Label(currency.rawValue, systemImage: "checkmark")
+                    } else {
+                        Text(currency.rawValue)
+                    }
+                }
             }
+        } label: {
+            HStack(spacing: 2) {
+                Text(displayCurrency.rawValue)
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .font(.subheadline.weight(.semibold))
         }
-        .pickerStyle(.segmented)
-        .frame(width: 120)
+        // Menu colors its trigger from `.tint`, not the label's own
+        // foregroundStyle — without this it renders in the app's lilac
+        // accent regardless of the .secondary set above.
+        .tint(.secondary)
         .disabled(viewModel.idrToUSDRate == nil)
     }
 
