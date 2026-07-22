@@ -10,14 +10,17 @@
 import Foundation
 
 protocol NetWorthServiceProtocol {
-    func totalAssets(accounts: [Account], assets: [Asset], holdings: [Holding], holdingValues: [UUID: Decimal]) -> Decimal
+    func totalAssets(accounts: [Account], accountBalances: [UUID: Decimal], assets: [Asset], holdings: [Holding], holdingValues: [UUID: Decimal]) -> Decimal
     func totalLiabilities(_ liabilities: [Liability]) -> Decimal
     func netWorth(totalAssets: Decimal, totalLiabilities: Decimal) -> Decimal
 }
 
 struct NetWorthService: NetWorthServiceProtocol {
-    func totalAssets(accounts: [Account], assets: [Asset], holdings: [Holding], holdingValues: [UUID: Decimal]) -> Decimal {
-        let accountsTotal = accounts.reduce(Decimal(0)) { $0 + $1.balance }
+    /// `accountBalances` carries each account's rolled-forward balance (see
+    /// LiquidBalanceService) — same pattern as `holdingValues`. A missing
+    /// entry falls back to the stored anchor.
+    func totalAssets(accounts: [Account], accountBalances: [UUID: Decimal], assets: [Asset], holdings: [Holding], holdingValues: [UUID: Decimal]) -> Decimal {
+        let accountsTotal = accounts.reduce(Decimal(0)) { $0 + (accountBalances[$1.id] ?? $1.balance) }
         let physicalTotal = assets.reduce(Decimal(0)) { $0 + $1.currentValue }
         let holdingsTotal = holdings.reduce(Decimal(0)) { $0 + (holdingValues[$1.id] ?? 0) }
         return accountsTotal + physicalTotal + holdingsTotal

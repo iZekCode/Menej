@@ -10,6 +10,9 @@ import SwiftData
 
 struct NetWorthHomeView: View {
     @Query private var accounts: [Account]
+    // Liquid balances roll forward from each account's anchor, so the
+    // headline depends on transactions too — see LiquidBalanceService.
+    @Query private var transactions: [Transaction]
     @Query private var assets: [Asset]
     @Query private var holdings: [Holding]
     @Query private var liabilities: [Liability]
@@ -77,10 +80,15 @@ struct NetWorthHomeView: View {
     private var breakdownCard: some View {
         SectionCard(title: "Breakdown") {
             VStack(spacing: AppSpacing.grid) {
-                BreakdownRow(label: "Liquid", systemImage: "banknote", amount: liquidTotal, isHidden: appState.areAmountsHidden)
+                // Liquid, Portfolio and Inventory are net-worth components,
+                // not top-level tabs — drill in from their breakdown rows.
+                NavigationLink {
+                    LiquidAccountsView()
+                } label: {
+                    BreakdownRow(label: "Liquid", systemImage: "banknote", amount: liquidTotal, showsChevron: true, isHidden: appState.areAmountsHidden)
+                }
+                .buttonStyle(.plain)
                 Divider()
-                // Portfolio and Inventory are net-worth components, not
-                // top-level tabs — drill in from their breakdown rows.
                 NavigationLink {
                     PortfolioView()
                 } label: {
@@ -103,11 +111,16 @@ struct NetWorthHomeView: View {
     private var netWorth: Decimal {
         viewModel.netWorth(
             accounts: accounts,
+            accountBalances: accountBalances,
             assets: assets,
             holdings: holdings,
             holdingValues: holdingValues,
             liabilities: liabilities
         ).netWorth
+    }
+
+    private var accountBalances: [UUID: Decimal] {
+        LiquidBalanceService().balances(accounts: accounts, transactions: transactions)
     }
 
     /// Holdings valued from their last persisted quote — synchronous and
@@ -117,7 +130,7 @@ struct NetWorthHomeView: View {
     }
 
     private var liquidTotal: Decimal {
-        accounts.reduce(Decimal(0)) { $0 + $1.balance }
+        accountBalances.values.reduce(Decimal(0), +)
     }
 
     private var portfolioTotal: Decimal {
@@ -129,11 +142,10 @@ struct NetWorthHomeView: View {
     }
 
     private var headlineAmount: String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "IDR"
-        formatter.currencySymbol = "Rp"
-        return formatter.string(from: NSDecimalNumber(decimal: netWorth)) ?? "\(netWorth)"
+        // `AmountText.string` formats the magnitude; a negative net worth
+        // still has to read as negative here.
+        let value = AmountText.string(amount: netWorth)
+        return netWorth < 0 ? "-\(value)" : value
     }
 
     private var monthlyDelta: Decimal? {

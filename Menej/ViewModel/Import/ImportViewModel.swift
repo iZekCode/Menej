@@ -122,6 +122,9 @@ final class ImportViewModel {
                account.lastSyncedAt == nil || periodEnd >= account.lastSyncedAt! {
                 account.balance = closingBalance
                 account.lastSyncedAt = periodEnd
+                // A printed closing balance is better evidence than anything
+                // the user typed, and it re-anchors the roll-forward here.
+                account.isBalanceManual = false
             }
 
             for parsedTransaction in statement.transactions {
@@ -173,9 +176,9 @@ final class ImportViewModel {
             // Monthly net worth snapshot (PRD §6 F5) — frozen once created
             // for a given month, so backfilling historical statements out
             // of order (e.g. all of one issuer's months, then another
-            // issuer's) never overwrites an already-committed month. Safe
-            // here because only myBCA ever changes an account's balance;
-            // GoPay/Grab accounts stay at 0 regardless of processing order.
+            // issuer's) never overwrites an already-committed month. A month
+            // is written once, from whatever was known at the time — later
+            // balance anchors move the live headline, not sealed history.
             try Self.upsertSnapshotIfNeeded(periodEnd: periodEnd, modelContext: modelContext, snapshotService: snapshotService)
 
             try modelContext.save()
@@ -249,14 +252,17 @@ final class ImportViewModel {
         // snapshot creation must stay synchronous and offline-safe, so it
         // never fetches prices itself.
         let allAccounts = try modelContext.fetch(FetchDescriptor<Account>())
+        let allTransactions = try modelContext.fetch(FetchDescriptor<Transaction>())
         let allAssets = try modelContext.fetch(FetchDescriptor<Asset>())
         let allHoldings = try modelContext.fetch(FetchDescriptor<Holding>())
         for asset in allAssets {
             asset.applyCurveIfNeeded()
         }
         let holdingValues = Dictionary(uniqueKeysWithValues: allHoldings.map { ($0.id, $0.offlineValueIDR) })
+        let accountBalances = LiquidBalanceService().balances(accounts: allAccounts, transactions: allTransactions)
         let totalAssets = NetWorthService().totalAssets(
             accounts: allAccounts,
+            accountBalances: accountBalances,
             assets: allAssets,
             holdings: allHoldings,
             holdingValues: holdingValues

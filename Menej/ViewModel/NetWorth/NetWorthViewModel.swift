@@ -30,12 +30,13 @@ final class NetWorthViewModel {
 
     func netWorth(
         accounts: [Account],
+        accountBalances: [UUID: Decimal],
         assets: [Asset],
         holdings: [Holding],
         holdingValues: [UUID: Decimal],
         liabilities: [Liability]
     ) -> (totalAssets: Decimal, totalLiabilities: Decimal, netWorth: Decimal) {
-        let totalAssets = netWorthService.totalAssets(accounts: accounts, assets: assets, holdings: holdings, holdingValues: holdingValues)
+        let totalAssets = netWorthService.totalAssets(accounts: accounts, accountBalances: accountBalances, assets: assets, holdings: holdings, holdingValues: holdingValues)
         let totalLiabilities = netWorthService.totalLiabilities(liabilities)
         let netWorth = netWorthService.netWorth(totalAssets: totalAssets, totalLiabilities: totalLiabilities)
         return (totalAssets, totalLiabilities, netWorth)

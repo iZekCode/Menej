@@ -35,6 +35,13 @@ struct AmountText: View {
     }
 
     private var formatted: String {
+        Self.string(amount: amount, currencyCode: currencyCode, showSign: showSign)
+    }
+
+    /// The same formatting as the view, for the places that need the string
+    /// itself — a headline in a different font, or an amount embedded in a
+    /// caption sentence.
+    static func string(amount: Decimal, currencyCode: String = "IDR", showSign: Bool = false) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = currencyCode
@@ -42,7 +49,7 @@ struct AmountText: View {
         let number = NSDecimalNumber(decimal: abs(amount))
         let value = formatter.string(from: number) ?? "\(amount)"
         guard showSign else { return value }
-        return (isNegative ? "-" : "+") + value
+        return (amount < 0 ? "-" : "+") + value
     }
 }
 
