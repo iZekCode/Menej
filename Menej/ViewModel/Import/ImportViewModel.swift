@@ -14,9 +14,44 @@ import CryptoKit
 enum ImportFileStatus {
     case pending
     case parsing
-    case needsReview(ParsedStatement)
+    case needsReview
     case failed(Error)
     case imported
+}
+
+/// One file in the import queue.
+///
+/// Replaces the old `[URL: ImportFileStatus]` dictionary. A Dictionary's key
+/// order is unspecified and can change on any mutation, so the list visibly
+/// reshuffled every time a file's status advanced — and there was no order to
+/// group or sort by in the first place.
+struct ImportFile: Identifiable {
+    let id = UUID()
+    /// Moves when the file is renamed to its canonical name after parsing.
+    var url: URL
+    /// The name the file arrived with. Still the best label a file that
+    /// failed to parse has — it has no issuer or period to be named after.
+    let originalName: String
+    var status: ImportFileStatus
+    /// Set once parsing succeeds, and kept after import so the row keeps its
+    /// title and stays in its month's section.
+    var parsed: ParsedStatement?
+
+    /// The month this statement belongs to, taken from its newest
+    /// transaction. `confirmImport` derives the stored `Statement.periodEnd`
+    /// exactly the same way, so a row can't be filed under a different month
+    /// than the record it creates. The end date rather than the start: a
+    /// myBCA period can open in late March and still be the April statement.
+    var periodEnd: Date? {
+        parsed?.transactions.map(\.date).max()
+    }
+
+    /// What the row is titled — and, after `ImportViewModel` renames it, what
+    /// the file on disk is actually called.
+    var displayName: String {
+        guard let parsed, let periodEnd else { return originalName }
+        return "\(parsed.issuer.displayName) — \(periodEnd.formatted(.dateTime.month(.wide).year()))"
+    }
 }
 
 enum ImportPersistenceError: Error {
@@ -31,7 +66,9 @@ final class ImportViewModel {
     private let categorizationService: CategorizationServiceProtocol
     private let snapshotService: SnapshotServiceProtocol
 
-    var fileStatuses: [URL: ImportFileStatus] = [:]
+    /// The queue, in the order files arrived. ImportFlowView groups it by
+    /// month for display; this stays a flat arrival-ordered list.
+    var files: [ImportFile] = []
 
     // Defaults are constructed in the body, not as parameter defaults: a
     // default argument expression is evaluated in the caller's isolation
@@ -53,15 +90,94 @@ final class ImportViewModel {
     func importFiles(_ urls: [URL]) {
         let rules = remoteConfigService.loadBundledRules()
         for url in urls {
-            fileStatuses[url] = .parsing
+            // Draining the shared inbox happens on every appearance of
+            // ImportFlowView, so the same URL can arrive twice.
+            guard !files.contains(where: { $0.url == url }) else { continue }
+
+            var file = ImportFile(url: url, originalName: url.lastPathComponent, status: .pending)
             do {
                 let parsed = try parsingService.parse(fileURL: url, availableRules: rules)
-                fileStatuses[url] = .needsReview(parsed)
+                file.parsed = parsed
+                file.status = .needsReview
+                if let renamed = Self.renamedToCanonicalName(url, for: parsed) {
+                    file.url = renamed
+                }
             } catch {
-                fileStatuses[url] = .failed(error)
+                file.status = .failed(error)
             }
+            files.append(file)
         }
     }
+
+    /// Drops a file from the queue and deletes the app's own copy of it.
+    ///
+    /// Safe to do at any status: the copy is not the user's file (see
+    /// ImportFlowView.copyIntoAppStorage) and it has no further use once
+    /// imported — the ledger holds the transactions, and `Statement.fileHash`
+    /// records which PDF produced them. Removing an already-imported row does
+    /// not un-import anything.
+    func remove(_ file: ImportFile) {
+        files.removeAll { $0.id == file.id }
+        guard Self.isInAppStorage(file.url) else { return }
+        try? FileManager.default.removeItem(at: file.url)
+    }
+
+    private func updateStatus(_ status: ImportFileStatus, for url: URL) {
+        guard let index = files.firstIndex(where: { $0.url == url }) else { return }
+        files[index].status = status
+    }
+
+    /// "MyBCA 2024-04.pdf" instead of "e-statement (3).pdf".
+    ///
+    /// Only ever touches the app's own copy: `copyIntoAppStorage` copies each
+    /// picked file into Documents and leaves the original where the user
+    /// keeps it, and `SharedImportInbox` moves shared files there too — the
+    /// `isInAppStorage` guard is what makes that a rule rather than an
+    /// assumption. Returns nil and leaves the file alone on any failure; a
+    /// tidier name isn't worth losing an import over. Dedup is unaffected
+    /// either way, since `fileHash` is computed from bytes, not the name.
+    private static func renamedToCanonicalName(_ url: URL, for statement: ParsedStatement) -> URL? {
+        guard isInAppStorage(url),
+              let periodEnd = statement.transactions.map(\.date).max() else { return nil }
+
+        let base = "\(statement.issuer.displayName) \(monthFormatter.string(from: periodEnd))"
+        let directory = url.deletingLastPathComponent()
+
+        // PickedImports gives every file its own UUID directory, so nothing
+        // can collide there. SharedImports is flat, so two statements from
+        // the same issuer and month would want the same name.
+        var candidate = directory.appendingPathComponent("\(base).pdf")
+        var suffix = 2
+        while candidate != url, FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = directory.appendingPathComponent("\(base) (\(suffix)).pdf")
+            suffix += 1
+        }
+        // Already correctly named — nothing to do.
+        guard candidate != url else { return nil }
+
+        do {
+            try FileManager.default.moveItem(at: url, to: candidate)
+            return candidate
+        } catch {
+            return nil
+        }
+    }
+
+    private static func isInAppStorage(_ url: URL) -> Bool {
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return false
+        }
+        return url.path.hasPrefix(documents.path)
+    }
+
+    /// Fixed format, POSIX locale: this names a file, so it must not vary
+    /// with the device's region settings.
+    private static let monthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM"
+        return formatter
+    }()
 
     /// Persists a confirmed statement as SwiftData records — the only point
     /// where parsed data enters the ledger, per PRD §6 F1 ("users always
@@ -76,7 +192,7 @@ final class ImportViewModel {
     /// over onto the matching re-parsed transaction (same date, amount,
     /// direction) so a replace never destroys manual work.
     ///
-    /// Throws instead of only recording `.failed` in `fileStatuses`, so a
+    /// Throws instead of only recording `.failed` on the queue entry, so a
     /// caller that actually needs to know whether the save succeeded (e.g.
     /// SeedDataService counting real imports) isn't stuck trusting a status
     /// dictionary it has to poll.
@@ -182,10 +298,10 @@ final class ImportViewModel {
             try Self.upsertSnapshotIfNeeded(periodEnd: periodEnd, modelContext: modelContext, snapshotService: snapshotService)
 
             try modelContext.save()
-            fileStatuses[url] = .imported
+            updateStatus(.imported, for: url)
             return statement.transactions.count
         } catch {
-            fileStatuses[url] = .failed(error)
+            updateStatus(.failed(error), for: url)
             throw error
         }
     }

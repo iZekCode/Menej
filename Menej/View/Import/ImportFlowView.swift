@@ -17,28 +17,30 @@ struct ImportFlowView: View {
     var body: some View {
         NavigationStack {
             List {
-                if viewModel.fileStatuses.isEmpty {
+                if viewModel.files.isEmpty {
                     EmptyStateView(
                         systemImage: "square.and.arrow.down",
                         title: "Import a statement",
                         message: "Add a PDF from myBCA, GoPay, or Grab. You can also share a file directly from Mail or Files."
                     )
                 } else {
-                    ForEach(Array(viewModel.fileStatuses.keys), id: \.self) { url in
-                        if case .needsReview(let statement) = viewModel.fileStatuses[url] {
-                            NavigationLink {
-                                ReviewStatementView(statement: statement) {
-                                    try? viewModel.confirmImport(url: url, statement: statement, modelContext: modelContext)
-                                }
-                            } label: {
-                                ImportRow(url: url, status: viewModel.fileStatuses[url])
+                    ForEach(groups) { group in
+                        Section {
+                            ForEach(group.files) { file in
+                                row(for: file)
+                                    .swipeActions(edge: .trailing) {
+                                        Button("Remove", systemImage: "trash", role: .destructive) {
+                                            viewModel.remove(file)
+                                        }
+                                    }
                             }
-                        } else {
-                            ImportRow(url: url, status: viewModel.fileStatuses[url])
+                        } header: {
+                            Text(group.title)
                         }
                     }
                 }
             }
+            .listSectionSpacing(AppSpacing.margin)
             .navigationTitle("Import")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -54,6 +56,56 @@ struct ImportFlowView: View {
             }
             .onAppear(perform: importPendingSharedFiles)
         }
+    }
+
+    /// Only a file still awaiting review pushes anywhere — an imported or
+    /// failed row has nothing to confirm.
+    @ViewBuilder
+    private func row(for file: ImportFile) -> some View {
+        if case .needsReview = file.status, let statement = file.parsed {
+            NavigationLink {
+                ReviewStatementView(statement: statement) {
+                    try? viewModel.confirmImport(url: file.url, statement: statement, modelContext: modelContext)
+                }
+            } label: {
+                ImportRow(file: file)
+            }
+        } else {
+            ImportRow(file: file)
+        }
+    }
+
+    /// One section per statement month, newest first. Anything without a
+    /// month — a file that failed to parse, or one that parsed to zero
+    /// transactions — is collected at the top, where it's actionable rather
+    /// than buried under months of successful imports.
+    private var groups: [ImportGroup] {
+        let calendar = Calendar.current
+        var byMonth: [Date: [ImportFile]] = [:]
+        var needsAttention: [ImportFile] = []
+
+        for file in viewModel.files {
+            guard let periodEnd = file.periodEnd,
+                  let month = calendar.dateInterval(of: .month, for: periodEnd)?.start else {
+                needsAttention.append(file)
+                continue
+            }
+            byMonth[month, default: []].append(file)
+        }
+
+        var result = byMonth.keys.sorted(by: >).map { month in
+            ImportGroup(
+                id: "\(month.timeIntervalSince1970)",
+                title: month.formatted(.dateTime.month(.wide).year()),
+                // Within a month, by issuer name — a stable order, unlike the
+                // dictionary this list used to iterate.
+                files: byMonth[month, default: []].sorted { $0.displayName < $1.displayName }
+            )
+        }
+        if !needsAttention.isEmpty {
+            result.insert(ImportGroup(id: "needsAttention", title: "Needs Attention", files: needsAttention), at: 0)
+        }
+        return result
     }
 
     /// Picks up PDFs the share extension dropped in the App Group container
@@ -102,30 +154,59 @@ struct ImportFlowView: View {
     }
 }
 
+private struct ImportGroup: Identifiable {
+    let id: String
+    let title: String
+    let files: [ImportFile]
+}
+
 private struct ImportRow: View {
-    let url: URL
-    let status: ImportFileStatus?
+    let file: ImportFile
 
     var body: some View {
-        HStack {
-            Text(url.lastPathComponent)
+        HStack(spacing: AppSpacing.grid) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(file.displayName)
+                    .lineLimit(1)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
             Spacer()
             statusView
         }
     }
 
+    /// Once a file is renamed, its title says the issuer and month, so the
+    /// subtitle carries what the title no longer can: how much is in it, and
+    /// — for a file that never parsed — the name it actually arrived with.
+    private var subtitle: String? {
+        if case .failed = file.status {
+            return "Couldn't read this file"
+        }
+        guard let parsed = file.parsed else { return nil }
+        let count = parsed.transactions.count
+        return count == 1 ? "1 transaction" : "\(count) transactions"
+    }
+
     @ViewBuilder
     private var statusView: some View {
-        switch status {
-        case .pending, .none:
+        switch file.status {
+        case .pending:
             Image(systemName: "clock")
+                .foregroundStyle(.secondary)
         case .parsing:
             ProgressView()
         case .needsReview:
             Label("Review", systemImage: "exclamationmark.circle")
+                .font(.subheadline)
                 .foregroundStyle(AppColor.accent)
         case .failed:
             Label("Failed", systemImage: "xmark.circle")
+                .font(.subheadline)
                 .foregroundStyle(AppColor.loss)
         case .imported:
             Image(systemName: "checkmark.circle.fill")
