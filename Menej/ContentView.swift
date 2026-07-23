@@ -15,17 +15,24 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
+            // Ordered by how often a tab is opened, not by how data flows
+            // through the app: Net Worth is the summary the app opens on,
+            // Insights and Ledger are the two you reach for whenever you
+            // wonder about a number. Import sits second-to-last because it's
+            // an occasional task rather than a destination — and its main
+            // entry point is the share sheet anyway (see
+            // ImportFlowView.importPendingSharedFiles), not this tab.
             Tab("Net Worth", systemImage: "chart.line.uptrend.xyaxis") {
                 NetWorthHomeView()
-            }
-            Tab("Import", systemImage: "square.and.arrow.down") {
-                ImportFlowView()
             }
             Tab("Insights", systemImage: "sparkles") {
                 InsightsView()
             }
             Tab("Ledger", systemImage: "list.bullet.rectangle") {
                 TransactionListView()
+            }
+            Tab("Import", systemImage: "square.and.arrow.down") {
+                ImportFlowView()
             }
             Tab("Settings", systemImage: "gearshape") {
                 SettingsView()
