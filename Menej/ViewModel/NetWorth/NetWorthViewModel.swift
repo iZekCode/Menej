@@ -22,10 +22,15 @@ import Observation
 @MainActor
 final class NetWorthViewModel {
     private let netWorthService: NetWorthServiceProtocol
+    private let insightService: InsightServiceProtocol
 
     // See ImportViewModel.swift for why the default is built in the body.
-    init(netWorthService: NetWorthServiceProtocol? = nil) {
+    init(
+        netWorthService: NetWorthServiceProtocol? = nil,
+        insightService: InsightServiceProtocol? = nil
+    ) {
         self.netWorthService = netWorthService ?? NetWorthService()
+        self.insightService = insightService ?? InsightService()
     }
 
     func netWorth(
@@ -40,5 +45,29 @@ final class NetWorthViewModel {
         let totalLiabilities = netWorthService.totalLiabilities(liabilities)
         let netWorth = netWorthService.netWorth(totalAssets: totalAssets, totalLiabilities: totalLiabilities)
         return (totalAssets, totalLiabilities, netWorth)
+    }
+
+    /// How long liquid assets cover the current burn rate (PRD §6 F8).
+    ///
+    /// `nil` means **withhold** — no complete month yet, a sole partial month
+    /// too early to prorate, or no burn at all. InsightService is deliberate
+    /// about this ("a wrong insight in week one does more damage than no
+    /// insight at all"), so the caller must render nothing rather than a zero
+    /// or a placeholder.
+    ///
+    /// Liquid only: a runway you can't spend isn't a runway, so holdings and
+    /// physical assets are excluded even though they're part of net worth.
+    func runway(
+        liquidAssets: Decimal,
+        transactions: [Transaction],
+        asOf: Date = .now
+    ) -> (months: Double, averageMonthlySpend: Decimal)? {
+        let entries = InsightsViewModel.spendEntries(from: transactions)
+        guard let averageMonthlySpend = insightService.averageMonthlySpend(entries: entries, asOf: asOf),
+              let months = insightService.runwayMonths(
+                  liquidAssets: liquidAssets,
+                  averageMonthlySpend: averageMonthlySpend
+              ) else { return nil }
+        return (months, averageMonthlySpend)
     }
 }

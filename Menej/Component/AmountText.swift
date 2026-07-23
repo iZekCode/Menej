@@ -58,6 +58,27 @@ struct AmountText: View {
         guard showSign else { return value }
         return (amount < 0 ? "-" : "+") + value
     }
+
+    /// Abbreviated IDR for places where a full figure won't fit and precision
+    /// isn't the point — a chart axis label, a donut's center. "Rp 4,4M",
+    /// "Rp 850K". Never use it where the exact number matters; `string(...)`
+    /// is the one that's safe to reason about.
+    static func compactString(_ value: Decimal) -> String {
+        let double = NSDecimalNumber(decimal: value).doubleValue
+        let sign = double < 0 ? "-" : ""
+        switch abs(double) {
+        case 1_000_000...:
+            return "\(sign)Rp \(trimmed(abs(double) / 1_000_000))M"
+        case 1_000...:
+            return "\(sign)Rp \(trimmed(abs(double) / 1_000))K"
+        default:
+            return "\(sign)Rp \(Int(abs(double)))"
+        }
+    }
+
+    private static func trimmed(_ value: Double) -> String {
+        value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value)
+    }
 }
 
 #Preview {

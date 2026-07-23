@@ -371,19 +371,31 @@ final class ImportViewModel {
         let allTransactions = try modelContext.fetch(FetchDescriptor<Transaction>())
         let allAssets = try modelContext.fetch(FetchDescriptor<Asset>())
         let allHoldings = try modelContext.fetch(FetchDescriptor<Holding>())
+        let allLiabilities = try modelContext.fetch(FetchDescriptor<Liability>())
         for asset in allAssets {
             asset.applyCurveIfNeeded()
         }
         let holdingValues = Dictionary(uniqueKeysWithValues: allHoldings.map { ($0.id, $0.offlineValueIDR) })
         let accountBalances = LiquidBalanceService().balances(accounts: allAccounts, transactions: allTransactions)
-        let totalAssets = NetWorthService().totalAssets(
+        let netWorthService = NetWorthService()
+        let totalAssets = netWorthService.totalAssets(
             accounts: allAccounts,
             accountBalances: accountBalances,
             assets: allAssets,
             holdings: allHoldings,
             holdingValues: holdingValues
         )
-        let snapshot = snapshotService.makeSnapshot(date: periodEnd, totalAssets: totalAssets, totalLiabilities: 0)
+        // Liabilities used to be hardcoded to 0 here because nothing could
+        // create one. They're hand-entered and carry no history of their own,
+        // so a snapshot records the balance as it stands when the month is
+        // sealed — and months already written keep whatever they recorded,
+        // per this function's freeze rule.
+        let totalLiabilities = netWorthService.totalLiabilities(allLiabilities)
+        let snapshot = snapshotService.makeSnapshot(
+            date: periodEnd,
+            totalAssets: totalAssets,
+            totalLiabilities: totalLiabilities
+        )
         modelContext.insert(snapshot)
     }
 

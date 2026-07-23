@@ -69,6 +69,33 @@ final class InsightsViewModel {
 
     // MARK: - Projection
 
+    /// Transaction → SpendEntry, the input `InsightService` is built around
+    /// (runway, anomalies). Static because it's a pure projection with no
+    /// dependency on this view model's state: NetWorthHomeView needs it for
+    /// the runway card without owning an InsightsViewModel.
+    ///
+    /// Same transfer/dedup handling as `analyticsEntries` below, then narrowed
+    /// further to real consumption — debits only, and only categories where
+    /// `isBurnSpend` holds. That narrowing is what `analyticsEntries`
+    /// deliberately does *not* do (it keeps credits so cashflow and income can
+    /// be computed from the same array), and it's what makes the result a
+    /// burn rate rather than a spend total.
+    static func spendEntries(from transactions: [Transaction]) -> [SpendEntry] {
+        var seenGroups = Set<UUID>()
+        var entries: [SpendEntry] = []
+        for transaction in transactions {
+            guard !transaction.isTransferLike, transaction.direction == .debit else { continue }
+            let category = transaction.categoryId ?? .other
+            guard category.isBurnSpend else { continue }
+            if let groupId = transaction.dedupGroupId {
+                guard !seenGroups.contains(groupId) else { continue }
+                seenGroups.insert(groupId)
+            }
+            entries.append(SpendEntry(date: transaction.date, amount: transaction.amount, category: category))
+        }
+        return entries
+    }
+
     /// Transaction → AnalyticsEntry: excludes transfers between the user's own
     /// accounts (PRD §6 F4) and counts a confirmed duplicate-expense pair once
     /// via `dedupGroupId`. Keeps both debits and credits so cashflow/income can

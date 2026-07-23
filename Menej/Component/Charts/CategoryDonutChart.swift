@@ -33,7 +33,7 @@ struct CategoryDonutChart: View {
                 Text("Total")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(compactIDR(total))
+                Text(AmountText.compactString(total))
                     .font(.headline)
                     .numericStyle()
             }
@@ -49,21 +49,6 @@ struct CategoryDonutChart: View {
             .joined(separator: ", ")
     }
 
-    private func compactIDR(_ value: Decimal) -> String {
-        let double = NSDecimalNumber(decimal: value).doubleValue
-        switch abs(double) {
-        case 1_000_000...:
-            return "Rp \(trim(double / 1_000_000))M"
-        case 1_000...:
-            return "Rp \(trim(double / 1_000))K"
-        default:
-            return "Rp \(Int(double))"
-        }
-    }
-
-    private func trim(_ value: Double) -> String {
-        value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value)
-    }
 }
 
 #Preview {

@@ -2,9 +2,9 @@
 //  NetWorthService.swift
 //  Menej
 //
-//  See PRD §6 F5. v1 label is "Total Assets" until liabilities ship in v1.1 —
-//  totalLiabilities is summed regardless so the schema doesn't need a
-//  retrofit later.
+//  See PRD §6 F5. `totalLiabilities` was summed from day one against an array
+//  that nothing could populate; LiabilitiesView now fills it, so `netWorth` is
+//  a real subtraction and the home screen is labelled accordingly.
 //
 
 import Foundation
