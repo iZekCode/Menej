@@ -33,8 +33,14 @@ enum CorpusFixtures {
     /// issuer detection included, so a fingerprint that stops matching fails
     /// here rather than silently falling back.
     static func statement(_ filename: String, folder: String, rule name: String) throws -> ParsedStatement {
+        // `SampleStatements/` at the repo root, deliberately outside `Menej/`:
+        // the app target is a synchronized folder group, so anything under
+        // `Menej/` is copied into the built .app in every configuration. The
+        // corpus is real statements, so keeping it out of the target is what
+        // stops it shipping. It's gitignored too — restore it from a local
+        // copy if these suites can't find it.
         let url = repositoryRoot
-            .appendingPathComponent("Menej/Financial Statement/\(folder)")
+            .appendingPathComponent("SampleStatements/\(folder)")
             .appendingPathComponent("\(filename).pdf")
         return try ParsingService().parse(fileURL: url, availableRules: [rule(named: name)])
     }

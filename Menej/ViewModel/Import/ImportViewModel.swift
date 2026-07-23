@@ -189,9 +189,9 @@ final class ImportViewModel {
     /// direction) so a replace never destroys manual work.
     ///
     /// Throws instead of only recording `.failed` on the queue entry, so a
-    /// caller that actually needs to know whether the save succeeded (e.g.
-    /// SeedDataService counting real imports) isn't stuck trusting a status
-    /// dictionary it has to poll.
+    /// caller that actually needs to know whether the save succeeded — the
+    /// re-import path in ImportFlowView, for one — isn't stuck inspecting a
+    /// status it has to poll.
     @discardableResult
     func confirmImport(url: URL, statement: ParsedStatement, modelContext: ModelContext) throws -> Int {
         do {

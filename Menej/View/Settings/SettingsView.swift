@@ -63,10 +63,6 @@ struct SettingsView: View {
 
     private let backupService = BackupService()
 
-    #if DEBUG
-    @State private var seedResult: SeedResult?
-    #endif
-
     var body: some View {
         NavigationStack {
             List {
@@ -75,9 +71,6 @@ struct SettingsView: View {
                 dataSection
                 backupSection
                 aboutSection
-                #if DEBUG
-                developerSection
-                #endif
             }
             .navigationTitle("Settings")
             // Switching off has to cancel now, not at next launch — otherwise
@@ -314,27 +307,6 @@ struct SettingsView: View {
         return "\(short) (\(build))"
     }
 
-    // MARK: - Developer
-
-    #if DEBUG
-    private var developerSection: some View {
-        Section {
-            Button("Reload Sample Statements") {
-                seedResult = SeedDataService.resetAndSeed(modelContext: modelContext)
-            }
-            if let seedResult {
-                Text(seedResult.description)
-                    .font(.footnote.monospaced())
-                    .foregroundStyle(seedResult.transactionsImported > 0 ? .secondary : AppColor.loss)
-                    .textSelection(.enabled)
-            }
-        } header: {
-            Text("Developer")
-        } footer: {
-            Text("Wipes the ledger and reimports the 15 real sample statements bundled with the app. Debug builds only — never ships to release.")
-        }
-    }
-    #endif
 }
 
 #Preview {
