@@ -103,7 +103,7 @@ struct InsightsView: View {
                 ToolbarItem(placement: .primaryAction) {
                     // Not "sparkles" — that's this tab's own icon, and the
                     // button would disappear into it.
-                    Button("Ask", systemImage: "wand.and.sparkles") {
+                    Button("Ask", systemImage: "sparkles") {
                         isAsking = true
                     }
                 }
