@@ -53,6 +53,10 @@ struct ContentView: View {
                 modelContext: modelContext,
                 isEnabled: appState.areRemindersEnabled
             )
+            // Only runs if a destination is set and a day has passed — see
+            // AutoBackupService. Nothing runs in the background, so app launch
+            // is the only trigger there is.
+            await AutoBackupService().runIfDue(modelContext: modelContext)
         }
         // Biometric gate (PRD §8). Opaque overlay so nothing shows until the
         // user authenticates; re-locks whenever the app leaves the foreground.

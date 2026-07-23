@@ -12,13 +12,21 @@ import UniformTypeIdentifiers
 struct ImportFlowView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
+    @Query(sort: \Statement.periodEnd, order: .reverse) private var statements: [Statement]
+    @Query private var transactions: [Transaction]
     @State private var viewModel = ImportViewModel()
     @State private var isPickerPresented = false
+    /// Stored PDFs keyed by content hash, so a past import can find its file
+    /// and offer re-import. Loaded once per appearance — hashing every stored
+    /// file is cheap but not free, and it can't change while this screen is up
+    /// except through this screen.
+    @State private var filesByHash: [String: StoredStatementFile] = [:]
+    @State private var statementPendingDeletion: Statement?
 
     var body: some View {
         NavigationStack {
             List {
-                if viewModel.files.isEmpty {
+                if viewModel.files.isEmpty && statements.isEmpty {
                     EmptyStateView(
                         systemImage: "square.and.arrow.down",
                         title: "Import a statement",
@@ -39,6 +47,7 @@ struct ImportFlowView: View {
                             Text(group.title)
                         }
                     }
+                    importedSection
                 }
             }
             .listSectionSpacing(AppSpacing.margin)
@@ -55,8 +64,98 @@ struct ImportFlowView: View {
                     viewModel.importFiles(copyIntoAppStorage(urls))
                 }
             }
-            .onAppear(perform: importPendingSharedFiles)
+            .confirmationDialog(
+                "Delete this statement?",
+                isPresented: Binding(
+                    get: { statementPendingDeletion != nil },
+                    set: { if !$0 { statementPendingDeletion = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let statement = statementPendingDeletion { delete(statement) }
+                    statementPendingDeletion = nil
+                }
+                Button("Cancel", role: .cancel) { statementPendingDeletion = nil }
+            } message: {
+                // Snapshots are frozen once written (SnapshotService), so a
+                // deletion can't walk history back. Saying so beats letting
+                // the user discover a net-worth chart that disagrees.
+                Text("Its transactions are removed from your ledger. Net worth history for past months keeps the figures it already recorded.")
+            }
+            .onAppear {
+                importPendingSharedFiles()
+                reloadStoredFiles()
+            }
         }
+    }
+
+    // MARK: - Imported history
+
+    /// Past imports, read back from the `Statement` records. Without this the
+    /// screen only ever showed the current session's queue, so relaunching
+    /// looked like the imports had been lost.
+    @ViewBuilder
+    private var importedSection: some View {
+        if !statements.isEmpty {
+            Section {
+                ForEach(statements) { statement in
+                    NavigationLink {
+                        StatementDetailView(statement: statement)
+                    } label: {
+                        ImportedStatementRow(
+                            statement: statement,
+                            transactionCount: transactionCount(for: statement),
+                            hasStoredFile: filesByHash[statement.fileHash] != nil
+                        )
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            statementPendingDeletion = statement
+                        }
+                        if let file = filesByHash[statement.fileHash] {
+                            Button("Re-import", systemImage: "arrow.clockwise") {
+                                reimport(statement, from: file)
+                            }
+                            .tint(AppColor.accent)
+                        }
+                    }
+                }
+            } header: {
+                Text("Imported")
+            } footer: {
+                Text("Swipe a statement to re-import or delete it.")
+            }
+        }
+    }
+
+    private func transactionCount(for statement: Statement) -> Int {
+        transactions.count { $0.sourceStatementId == statement.id }
+    }
+
+    private func reloadStoredFiles() {
+        let files = StatementFileStore().storedFiles()
+        filesByHash = Dictionary(files.map { ($0.hash, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Re-runs a stored PDF through the parser. `confirmImport` already
+    /// replaces a statement with a matching `fileHash` and carries the user's
+    /// corrections onto the re-parsed rows, so this is the after-a-parser-fix
+    /// path, not a duplicate import.
+    private func reimport(_ statement: Statement, from file: StoredStatementFile) {
+        viewModel.importFiles([file.url])
+        guard let queued = viewModel.files.first(where: { $0.url == file.url }),
+              let parsed = queued.parsed else { return }
+        try? viewModel.confirmImport(url: file.url, statement: parsed, modelContext: modelContext)
+    }
+
+    private func delete(_ statement: Statement) {
+        let statementId = statement.id
+        for transaction in transactions where transaction.sourceStatementId == statementId {
+            modelContext.delete(transaction)
+        }
+        modelContext.delete(statement)
+        try? modelContext.save()
     }
 
     /// Only a file still awaiting review pushes anywhere — an imported or
@@ -169,6 +268,92 @@ private struct ImportGroup: Identifiable {
     let id: String
     let title: String
     let files: [ImportFile]
+}
+
+/// One past import, from its persisted `Statement` record.
+private struct ImportedStatementRow: View {
+    let statement: Statement
+    let transactionCount: Int
+    /// False when the source PDF is no longer on disk — the row still shows,
+    /// it just can't be re-imported.
+    let hasStoredFile: Bool
+
+    var body: some View {
+        HStack(spacing: AppSpacing.grid) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(statement.issuer.displayName) — \(statement.periodEnd.formatted(.dateTime.month(.wide).year()))")
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if !hasStoredFile {
+                // The PDF is gone, so re-import isn't offered on this row.
+                // Marked rather than left as a mystery when swiping.
+                Image(systemName: "doc.badge.ellipsis")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel("Original file no longer stored")
+            }
+        }
+    }
+
+    private var subtitle: String {
+        let count = transactionCount == 1 ? "1 transaction" : "\(transactionCount) transactions"
+        let imported = statement.parsedAt.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted))
+        return "\(count) · imported \(imported)"
+    }
+}
+
+/// The transactions one statement produced. Reuses `TransactionRow`, the same
+/// row the Ledger and Insights use, so a transaction looks identical wherever
+/// it's read from.
+private struct StatementDetailView: View {
+    let statement: Statement
+
+    @Query private var transactions: [Transaction]
+    @Query private var accounts: [Account]
+
+    private var statementTransactions: [Transaction] {
+        transactions
+            .filter { $0.sourceStatementId == statement.id }
+            .sorted { $0.date > $1.date }
+    }
+
+    private var issuerByAccount: [UUID: Issuer] {
+        Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0.issuer) })
+    }
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("Period", value: periodText)
+                LabeledContent("Imported", value: statement.parsedAt.formatted(date: .abbreviated, time: .shortened))
+                LabeledContent("Confidence", value: "\((statement.confidence * 100).formatted(.number.precision(.fractionLength(0))))%")
+                if statement.unaccountedAmount != 0 {
+                    // PRD §6 F1 — the reconciliation gap is always shown, never
+                    // hidden.
+                    LabeledContent("Unaccounted") {
+                        AmountText(amount: statement.unaccountedAmount)
+                    }
+                }
+            }
+            Section("Transactions") {
+                ForEach(statementTransactions) { transaction in
+                    TransactionRow(transaction: transaction, issuer: issuerByAccount[transaction.accountId])
+                }
+            }
+        }
+        .navigationTitle(statement.issuer.displayName)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var periodText: String {
+        let style = Date.FormatStyle(date: .abbreviated, time: .omitted)
+        return "\(statement.periodStart.formatted(style)) – \(statement.periodEnd.formatted(style))"
+    }
 }
 
 private struct ImportRow: View {

@@ -9,7 +9,6 @@
 import Foundation
 import Observation
 import SwiftData
-import CryptoKit
 
 enum ImportFileStatus {
     case pending
@@ -164,10 +163,7 @@ final class ImportViewModel {
     }
 
     private static func isInAppStorage(_ url: URL) -> Bool {
-        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            return false
-        }
-        return url.path.hasPrefix(documents.path)
+        StatementFileStore().isManaged(url)
     }
 
     /// Fixed format, POSIX locale: this names a file, so it must not vary
@@ -306,9 +302,17 @@ final class ImportViewModel {
         }
     }
 
+    /// Delegates to StatementFileStore so there is exactly one hash
+    /// implementation. `Statement.fileHash` is what makes a re-import replace
+    /// rather than duplicate, *and* what links a stored PDF back to the
+    /// statement it produced — two implementations that drifted would break
+    /// both silently.
     private static func fileHash(for url: URL) throws -> String {
-        guard let data = try? Data(contentsOf: url) else { throw ImportPersistenceError.unreadableFile }
-        return SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+        do {
+            return try StatementFileStore.hash(of: url)
+        } catch {
+            throw ImportPersistenceError.unreadableFile
+        }
     }
 
     /// The user's manual work on a transaction, snapshotted as plain values
