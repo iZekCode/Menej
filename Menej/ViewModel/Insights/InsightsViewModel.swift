@@ -100,7 +100,12 @@ final class InsightsViewModel {
     /// accounts (PRD §6 F4) and counts a confirmed duplicate-expense pair once
     /// via `dedupGroupId`. Keeps both debits and credits so cashflow/income can
     /// be computed; the burn-spend narrowing happens in AnalyticsEntry.isExpense.
-    private static func analyticsEntries(from transactions: [Transaction]) -> [AnalyticsEntry] {
+    ///
+    /// Not private: FinanceChatViewModel feeds the same projection to
+    /// FinanceQueryService, so the Ask tab and the Insights dashboard answer
+    /// from an identical view of the ledger. Changing the filtering here
+    /// changes both, which is the point.
+    static func analyticsEntries(from transactions: [Transaction]) -> [AnalyticsEntry] {
         var seenGroups = Set<UUID>()
         var entries: [AnalyticsEntry] = []
         for transaction in transactions {

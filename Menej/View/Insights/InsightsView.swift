@@ -20,6 +20,7 @@ struct InsightsView: View {
     @State private var viewModel = InsightsViewModel()
     @State private var selectedMonth: Date = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
     @State private var tab: InsightsTab = .spending
+    @State private var isAsking = false
 
     private var issuerByAccount: [UUID: Issuer] {
         Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0.issuer) })
@@ -94,8 +95,24 @@ struct InsightsView: View {
                 .padding(AppSpacing.margin)
             }
             .navigationTitle("Insights")
+            .toolbar {
+                // Ask lives here rather than on its own tab: it answers from
+                // the same spending data this screen charts, and Apple
+                // Intelligence is hardware- and region-gated, so a tab could
+                // be permanently dead weight on an ineligible device.
+                ToolbarItem(placement: .primaryAction) {
+                    // Not "sparkles" — that's this tab's own icon, and the
+                    // button would disappear into it.
+                    Button("Ask", systemImage: "wand.and.sparkles") {
+                        isAsking = true
+                    }
+                }
+            }
             .navigationDestination(for: Category.self) { category in
                 CategoryDetailView(category: category, period: .singleMonth, reference: selectedMonth)
+            }
+            .sheet(isPresented: $isAsking) {
+                FinanceChatView()
             }
         }
     }
