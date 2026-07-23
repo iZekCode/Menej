@@ -23,6 +23,11 @@ struct EmptyStateView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(AppSpacing.margin)
+        // Always full width. The contents are centered, but without this the
+        // view sizes to its text and gets pushed to the leading edge by any
+        // `VStack(alignment: .leading)` parent — which is what Insights,
+        // Net Worth and Inventory all are.
+        .frame(maxWidth: .infinity)
     }
 }
 

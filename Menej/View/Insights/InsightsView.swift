@@ -101,8 +101,6 @@ struct InsightsView: View {
                 // Intelligence is hardware- and region-gated, so a tab could
                 // be permanently dead weight on an ineligible device.
                 ToolbarItem(placement: .primaryAction) {
-                    // Not "sparkles" — that's this tab's own icon, and the
-                    // button would disappear into it.
                     Button("Ask", systemImage: "sparkles") {
                         isAsking = true
                     }
