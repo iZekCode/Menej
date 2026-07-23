@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 
 struct ImportFlowView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppState.self) private var appState
     @State private var viewModel = ImportViewModel()
     @State private var isPickerPresented = false
 
@@ -66,6 +67,16 @@ struct ImportFlowView: View {
             NavigationLink {
                 ReviewStatementView(statement: statement) {
                     try? viewModel.confirmImport(url: file.url, statement: statement, modelContext: modelContext)
+                    // Pushes the import nudge on to the next month. Without
+                    // this it keeps pointing at the month just imported, and
+                    // would eventually fire asking for it again — nothing runs
+                    // in the background to notice otherwise.
+                    Task {
+                        await ReminderScheduler.sync(
+                            modelContext: modelContext,
+                            isEnabled: appState.areRemindersEnabled
+                        )
+                    }
                 }
             } label: {
                 ImportRow(file: file)

@@ -112,6 +112,11 @@ struct LiabilitiesView: View {
         for index in offsets {
             modelContext.delete(sortedLiabilities[index])
         }
+        // Rebuilds every pending notification from what's left, so a deleted
+        // liability's due-date reminder goes with it — see ReminderScheduler.
+        let modelContext = modelContext
+        let isEnabled = appState.areRemindersEnabled
+        Task { await ReminderScheduler.sync(modelContext: modelContext, isEnabled: isEnabled) }
     }
 }
 
@@ -173,6 +178,7 @@ private struct LiabilityFormView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppState.self) private var appState
 
     private let mode: Mode
 
@@ -269,7 +275,17 @@ private struct LiabilityFormView: View {
     private func delete() {
         guard let liability = mode.liability else { return }
         modelContext.delete(liability)
+        syncReminders()
         dismiss()
+    }
+
+    /// One rebuild of every pending notification from what the store now holds
+    /// — covers setting a due date, clearing one, and deleting the liability,
+    /// without this view tracking notification identifiers.
+    private func syncReminders() {
+        let modelContext = modelContext
+        let isEnabled = appState.areRemindersEnabled
+        Task { await ReminderScheduler.sync(modelContext: modelContext, isEnabled: isEnabled) }
     }
 
     private func save() {
@@ -297,6 +313,7 @@ private struct LiabilityFormView: View {
                 dueDate: due
             ))
         }
+        syncReminders()
         dismiss()
     }
 }

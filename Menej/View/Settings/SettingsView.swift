@@ -22,6 +22,17 @@ struct SettingsView: View {
                 Section("Security") {
                     Toggle("Require Face ID / Touch ID", isOn: $appState.isFaceIDEnabled)
                 }
+                Section {
+                    Toggle("Reminders", isOn: $appState.areRemindersEnabled)
+                } header: {
+                    Text("Reminders")
+                } footer: {
+                    // Provisional delivery is silent, so without saying this a
+                    // user who expects a banner concludes the feature is
+                    // broken. Amounts are named as absent on purpose — this
+                    // text is also the promise not to put them there.
+                    Text("Warranty expiry, payment due dates, and a monthly nudge to import statements. They arrive quietly in Notification Center and never show amounts.")
+                }
                 Section("Widget") {
                     Toggle("Hide amounts when locked", isOn: $appState.isWidgetPrivacyModeEnabled)
                 }
@@ -49,6 +60,12 @@ struct SettingsView: View {
             }
             .listStyle(.grouped)
             .navigationTitle("Settings")
+            // Switching off has to cancel now, not at next launch — otherwise
+            // a user who just turned reminders off still gets one tomorrow.
+            // Switching on reschedules from current data.
+            .onChange(of: appState.areRemindersEnabled) { _, isEnabled in
+                Task { await ReminderScheduler.sync(modelContext: modelContext, isEnabled: isEnabled) }
+            }
         }
     }
 }

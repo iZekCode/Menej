@@ -50,8 +50,6 @@ struct InventoryView: View {
     /// disappears and `visibleItems` simply comes back empty.
     @State private var filter: AssetType?
 
-    private let reminderService = WarrantyReminderService()
-
     // Two columns on every iPhone width, three on wider layouts. The gutter is
     // a full margin rather than the 8pt grid — at 8pt two photos read as one
     // banded strip instead of two separate objects.
@@ -272,10 +270,10 @@ struct InventoryView: View {
     /// depends on sort and filter, so an index into the grid is only
     /// meaningful for the exact array that produced it.
     private func delete(_ item: Asset) {
-        // Reminder identifiers embed the asset id — without this the
-        // notifications for a deleted item still fire.
-        reminderService.cancelReminders(assetId: item.id)
         modelContext.delete(item)
+        // Rebuilds every pending notification from what's left, so the
+        // deleted item's warranty reminder goes with it.
+        Task { await ReminderScheduler.sync(modelContext: modelContext, isEnabled: appState.areRemindersEnabled) }
     }
 }
 
@@ -373,6 +371,7 @@ private struct ItemPhoto: View {
 private struct InventoryItemFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppState.self) private var appState
 
     /// nil = creating a new item.
     let item: Asset?
@@ -398,7 +397,6 @@ private struct InventoryItemFormView: View {
     @State private var isConfirmingDelete = false
 
     private let depreciationService = DepreciationService()
-    private let reminderService = WarrantyReminderService()
 
     private static let physicalTypes = AssetType.allCases.filter(\.isPhysical)
 
@@ -636,13 +634,20 @@ private struct InventoryItemFormView: View {
         photoData = item.photoData
     }
 
-    /// Mirrors InventoryView's own delete: cancel the reminders first, since
-    /// their identifiers embed the asset id and would otherwise still fire.
     private func deleteItem() {
         guard let item else { return }
-        reminderService.cancelReminders(assetId: item.id)
         modelContext.delete(item)
+        syncReminders()
         dismiss()
+    }
+
+    /// One rebuild of every pending notification, from whatever the store now
+    /// holds — see ReminderScheduler. Covers adding a warranty, clearing one,
+    /// and deleting the item, without this view tracking identifiers.
+    private func syncReminders() {
+        let modelContext = modelContext
+        let isEnabled = appState.areRemindersEnabled
+        Task { await ReminderScheduler.sync(modelContext: modelContext, isEnabled: isEnabled) }
     }
 
     private func save() {
@@ -650,7 +655,6 @@ private struct InventoryItemFormView: View {
         let value = usesCurve ? (estimatedValue ?? acquisitionCost ?? 0) : effectiveManualValue
         let warranty = hasWarranty ? warrantyExpiresAt : nil
 
-        let saved: Asset
         if let item {
             item.type = type
             item.name = name.trimmingCharacters(in: .whitespaces)
@@ -660,9 +664,8 @@ private struct InventoryItemFormView: View {
             item.depreciationCurve = curveId
             item.warrantyExpiresAt = warranty
             item.photoData = photoData
-            saved = item
         } else {
-            saved = Asset(
+            modelContext.insert(Asset(
                 type: type,
                 name: name.trimmingCharacters(in: .whitespaces),
                 acquiredAt: acquiredAt,
@@ -671,20 +674,10 @@ private struct InventoryItemFormView: View {
                 depreciationCurve: curveId,
                 warrantyExpiresAt: warranty,
                 photoData: photoData
-            )
-            modelContext.insert(saved)
+            ))
         }
 
-        let reminderService = reminderService
-        let assetId = saved.id
-        let assetName = saved.name
-        Task {
-            await reminderService.scheduleReminders(
-                assetId: assetId,
-                assetName: assetName,
-                warrantyExpiresAt: warranty
-            )
-        }
+        syncReminders()
         dismiss()
     }
 }

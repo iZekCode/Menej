@@ -44,6 +44,16 @@ struct ContentView: View {
             SeedDataService.seedIfNeeded(modelContext: modelContext)
         }
         #endif
+        // Rebuilt on every launch. Nothing runs in the background, so this is
+        // the only thing that keeps the import nudge pointed at the right
+        // month after the app has been closed for a while — and it repairs a
+        // reinstall, where pending notifications are gone but the data isn't.
+        .task {
+            await ReminderScheduler.sync(
+                modelContext: modelContext,
+                isEnabled: appState.areRemindersEnabled
+            )
+        }
         // Biometric gate (PRD §8). Opaque overlay so nothing shows until the
         // user authenticates; re-locks whenever the app leaves the foreground.
         .overlay {

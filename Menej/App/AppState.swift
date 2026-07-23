@@ -31,6 +31,13 @@ final class AppState {
         didSet { UserDefaults.standard.set(areAmountsHidden, forKey: Keys.hideAmounts) }
     }
 
+    /// Master switch for every local notification — warranty expiry, payment
+    /// due dates, and the monthly import nudge (see ReminderService). On by
+    /// default: they're provisional, so they arrive quietly and never prompt.
+    var areRemindersEnabled: Bool {
+        didSet { UserDefaults.standard.set(areRemindersEnabled, forKey: Keys.reminders) }
+    }
+
     init() {
         let defaults = UserDefaults.standard
         // Face ID and widget privacy default ON (PRD §8/§9); amounts default visible.
@@ -38,15 +45,18 @@ final class AppState {
             Keys.faceID: true,
             Keys.widgetPrivacy: true,
             Keys.hideAmounts: false,
+            Keys.reminders: true,
         ])
         isFaceIDEnabled = defaults.bool(forKey: Keys.faceID)
         isWidgetPrivacyModeEnabled = defaults.bool(forKey: Keys.widgetPrivacy)
         areAmountsHidden = defaults.bool(forKey: Keys.hideAmounts)
+        areRemindersEnabled = defaults.bool(forKey: Keys.reminders)
     }
 
     private enum Keys {
         static let faceID = "isFaceIDEnabled"
         static let widgetPrivacy = "isWidgetPrivacyModeEnabled"
         static let hideAmounts = "areAmountsHidden"
+        static let reminders = "areRemindersEnabled"
     }
 }
