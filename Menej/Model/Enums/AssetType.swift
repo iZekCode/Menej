@@ -59,15 +59,15 @@ enum AssetType: String, Codable, CaseIterable, Identifiable {
     /// distinguishes a laptop from a motorbike at a glance.
     var systemImage: String {
         switch self {
-        case .bankAccount: return "banknote"
+        case .bankAccount: return "building.columns"
         case .eWallet: return "wallet.bifold"
-        case .cash: return "dollarsign.circle"
+        case .cash: return "banknote"
         case .crypto: return "bitcoinsign.circle"
         case .stock: return "chart.line.uptrend.xyaxis"
         case .mutualFund: return "chart.pie"
         case .timeDeposit: return "lock.circle"
         case .gold: return "circle.hexagongrid.fill"
-        case .brokerageCash: return "building.columns"
+        case .brokerageCash: return "dollarsign.circle"
         case .electronics: return "laptopcomputer"
         case .vehicle: return "car.fill"
         case .watch: return "watch.analog"

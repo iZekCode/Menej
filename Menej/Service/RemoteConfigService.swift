@@ -24,7 +24,7 @@ struct RemoteConfigService: RemoteConfigServiceProtocol {
 
     func loadBundledRules() -> [IssuerRule] {
         let decoder = JSONDecoder()
-        return Issuer.allCases.compactMap { issuer in
+        return Issuer.statementIssuers.compactMap { issuer in
             guard let url = Bundle.main.url(
                 forResource: issuer.rawValue,
                 withExtension: "json",

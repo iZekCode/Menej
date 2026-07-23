@@ -21,6 +21,7 @@ struct LiquidAccountsView: View {
     @Query private var transactions: [Transaction]
 
     @State private var accountBeingEdited: Account?
+    @State private var isAddingManualAccount = false
 
     private let balanceService = LiquidBalanceService()
     private let transferService = TransferService()
@@ -50,20 +51,28 @@ struct LiquidAccountsView: View {
         .listSectionSpacing(AppSpacing.margin)
         .navigationTitle("Liquid")
         .toolbar {
-            if !missingIssuers.isEmpty {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        ForEach(missingIssuers) { issuer in
-                            Button(issuer.displayName) { addAccount(for: issuer) }
-                        }
-                    } label: {
-                        Label("Add Account", systemImage: "plus")
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    // The three parseable providers are offered only while
+                    // they don't exist yet — each is a single identity that
+                    // imports look up by issuer. "Other" has no such limit.
+                    ForEach(missingIssuers) { issuer in
+                        Button(issuer.displayName) { addAccount(for: issuer) }
                     }
+                    if !missingIssuers.isEmpty {
+                        Divider()
+                    }
+                    Button("Other Account…") { isAddingManualAccount = true }
+                } label: {
+                    Label("Add Account", systemImage: "plus")
                 }
             }
         }
         .sheet(item: $accountBeingEdited) { account in
-            AccountBalanceFormView(account: account)
+            AccountBalanceFormView(mode: .edit(account))
+        }
+        .sheet(isPresented: $isAddingManualAccount) {
+            AccountBalanceFormView(mode: .addManual)
         }
     }
 
@@ -120,6 +129,17 @@ struct LiquidAccountsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                // Only hand-added accounts can be removed. A statement-backed
+                // account owns imported transactions and is what an import
+                // looks up by issuer — deleting it would orphan the former
+                // and silently recreate the latter on the next import.
+                .swipeActions(edge: .trailing) {
+                    if account.issuer == .manual {
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            modelContext.delete(account)
+                        }
+                    }
+                }
             }
         } header: {
             Text("Accounts")
@@ -192,7 +212,7 @@ struct LiquidAccountsView: View {
     }
 
     private var missingIssuers: [Issuer] {
-        Issuer.allCases.filter { issuer in !accounts.contains { $0.issuer == issuer } }
+        Issuer.statementIssuers.filter { issuer in !accounts.contains { $0.issuer == issuer } }
     }
 
     private func addAccount(for issuer: Issuer) {
@@ -222,7 +242,9 @@ private struct AccountRow: View {
                         .foregroundStyle(.secondary)
                 }
             } icon: {
-                Image(systemName: account.type == .bankAccount ? "building.columns" : "wallet.bifold")
+                // Now that accounts can be cash as well as bank/e-wallet, the
+                // icon comes from the type itself rather than a two-way test.
+                Image(systemName: account.type.systemImage)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -298,24 +320,77 @@ struct TransferRow: View {
 
 // MARK: - Balance form
 
+/// Editing an existing account and creating a hand-added one share this form:
+/// the fields are the same balance anchor either way, and only what Save does
+/// differs. Same shape as PortfolioView's HoldingFormView.
 private struct AccountBalanceFormView: View {
+    enum Mode {
+        case edit(Account)
+        /// A new `.manual` account. Nothing is inserted until Save, so
+        /// cancelling can't leave a nameless empty account behind.
+        case addManual
+
+        var account: Account? {
+            if case .edit(let account) = self { return account }
+            return nil
+        }
+    }
+
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    let account: Account
+    private let mode: Mode
 
-    @State private var nickname = ""
+    @State private var nickname: String
+    @State private var type: AssetType
     @State private var balance: Decimal?
-    @State private var asOf = Date()
+    @State private var asOf: Date
+
+    init(mode: Mode) {
+        self.mode = mode
+        let account = mode.account
+        _nickname = State(initialValue: account?.nickname ?? "")
+        _type = State(initialValue: account?.type ?? .bankAccount)
+        // Only prefill an anchor that actually exists — a stored 0 from an
+        // account that was never anchored isn't a balance the user set.
+        let isAnchored = account?.hasBalanceAnchor ?? false
+        _balance = State(initialValue: isAnchored ? account?.balance : nil)
+        _asOf = State(initialValue: (isAnchored ? account?.lastSyncedAt : nil) ?? Date())
+    }
+
+    /// The three parseable providers have a fixed kind — MyBCA is a bank,
+    /// GoPay and Grab are wallets — so the picker is only meaningful for a
+    /// hand-added account.
+    private static let manualTypes: [AssetType] = [.bankAccount, .eWallet, .cash]
+
+    private var issuer: Issuer { mode.account?.issuer ?? .manual }
+    private var isManual: Bool { issuer == .manual }
+
+    /// A hand-added account has no issuer name to fall back on, so its name
+    /// is the only thing that distinguishes it from another one.
+    private var canSave: Bool {
+        guard balance != nil else { return false }
+        return !isManual || !nickname.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField(account.issuer.displayName, text: $nickname)
+                    TextField(namePrompt, text: $nickname)
+                    if isManual {
+                        Picker("Kind", selection: $type) {
+                            ForEach(Self.manualTypes) { type in
+                                Text(type.displayName).tag(type)
+                            }
+                        }
+                    }
                 } header: {
                     Text("Name")
                 } footer: {
-                    Text("Leave blank to use \(account.issuer.displayName).")
+                    Text(isManual
+                         ? "Shown wherever this account appears."
+                         : "Leave blank to use \(issuer.displayName).")
                 }
 
                 Section {
@@ -326,39 +401,54 @@ private struct AccountBalanceFormView: View {
                     Text(balanceFooter)
                 }
             }
-            .navigationTitle(account.displayName)
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(balance == nil)
+                    Button(mode.account == nil ? "Add" : "Save") { save() }
+                        .disabled(!canSave)
                 }
             }
-            .onAppear(perform: populateFromExisting)
         }
     }
 
-    private var balanceFooter: String {
-        account.issuer == .bcaMyBCA
-            ? "Transactions after this date are added automatically. Importing a myBCA statement replaces this with its printed closing balance."
-            : "\(account.issuer.displayName) statements don't print a balance, so this is the only way to set one. Transactions after this date are added automatically."
+    private var title: String {
+        mode.account.map(\.displayName) ?? "New Account"
     }
 
-    private func populateFromExisting() {
-        nickname = account.nickname ?? ""
-        // Only prefill an anchor that actually exists — a stored 0 from an
-        // account that was never anchored isn't a balance the user set.
-        if account.hasBalanceAnchor {
-            balance = account.balance
-            asOf = account.lastSyncedAt ?? Date()
+    private var namePrompt: String {
+        isManual ? "Name (Jago, Mandiri, Wallet…)" : issuer.displayName
+    }
+
+    private var balanceFooter: String {
+        switch issuer {
+        case .bcaMyBCA:
+            return "Transactions after this date are added automatically. Importing a myBCA statement replaces this with its printed closing balance."
+        case .manual:
+            // No statement will ever arrive for this one, so nothing will
+            // ever roll it forward — say so rather than implying upkeep the
+            // app can't do.
+            return "This account has no statement to import, so its balance only changes when you edit it here."
+        default:
+            return "\(issuer.displayName) statements don't print a balance, so this is the only way to set one. Transactions after this date are added automatically."
         }
     }
 
     private func save() {
         let trimmed = nickname.trimmingCharacters(in: .whitespaces)
+        let account: Account
+        switch mode {
+        case .edit(let existing):
+            account = existing
+            if isManual { account.type = type }
+        case .addManual:
+            account = Account(issuer: .manual, type: type)
+            modelContext.insert(account)
+        }
+
         account.nickname = trimmed.isEmpty ? nil : trimmed
         account.balance = balance ?? 0
         account.lastSyncedAt = asOf

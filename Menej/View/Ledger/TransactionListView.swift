@@ -320,6 +320,9 @@ struct IssuerTag: View {
         case .grab:     return Color(light: "#00A651", dark: "#3AD183")
         case .gopay:    return Color(light: "#00AAD6", dark: "#3EC6EC")
         case .bcaMyBCA: return Color(light: "#0060AF", dark: "#5AA6E8")
+        // A hand-added account has no brand to borrow a color from. Neutral
+        // gray, so it never reads as a fourth provider.
+        case .manual:   return Color(light: "#6E6E73", dark: "#98989D")
         }
     }
 }
