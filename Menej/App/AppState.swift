@@ -20,6 +20,13 @@ final class AppState {
     }
 
     /// PRD §9 — Home Screen widget privacy mode, optional, on by default.
+    ///
+    /// Currently has no consumer and no Settings row: `Widget/` compiles into
+    /// the main app target with no Widget Extension, so no widget ever reads
+    /// it. Kept rather than deleted because the preference survives here for
+    /// when F9 ships — at which point the widget must read it from the
+    /// `group.Filbert.Menej` App Group, not from `UserDefaults.standard`,
+    /// which an extension process can't see.
     var isWidgetPrivacyModeEnabled: Bool {
         didSet { UserDefaults.standard.set(isWidgetPrivacyModeEnabled, forKey: Keys.widgetPrivacy) }
     }
